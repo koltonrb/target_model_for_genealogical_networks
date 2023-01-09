@@ -1,0 +1,5 @@
+# ignore all files in the output directory
+output/
+# ignore pdf files 
+*.pdf
+
