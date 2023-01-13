@@ -30,7 +30,8 @@ def makeOutputDirectory(out_directory, name):
     while os.path.exists(output_dir+str(ver)):
         ver += 1
     output_dir += str(ver)
-    os.makedirs(output_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     return output_dir
 
 
@@ -644,7 +645,7 @@ below is example code to run the model
 
 #%%
 def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True): # n = number of initial nodes
-    
+    filename = name + '_' + filename
     marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
     greatest_lower_bound = 2
     least_upper_bound = size_goal
@@ -711,9 +712,19 @@ def find_start_size(name, out_directory='start_size', filename='start_size', max
 #%%
 
 
-def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True):
+def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, save_individual_start_sizes=False, random_start=True):
     #find out directory.  Every iteration in this function call will output to the same file
     out_dir = makeOutputDirectory(out_directory, name)
+    
+    if save_start_sizes:
+        # create the folder, text file to which EACH start_size list will be appended 
+        filename = name + '_' + 'start_size'
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+        if not os.path.exists(os.path.join(out_dir, filename + '.txt')):
+            with open(os.path.join(out_dir, filename + '.txt'), 'w'):
+                pass
+    
     to_plot = [] 
     for i in range(iters):
         start_sizes = find_start_size(name,
@@ -721,10 +732,21 @@ def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_it
                                       max_iters=max_iters, 
                                       dies_out_threshold=dies_out_threshold,
                                       verbose=verbose, 
-                                      save_start_sizes=save_start_sizes, 
+                                      save_start_sizes=save_individual_start_sizes, 
                                       random_start=random_start)
         to_plot.append(start_sizes)
+        
+        if save_start_sizes:
+            # save a text file (one line per run of find_start_size())
+            with open(os.path.join(out_dir, filename +'.txt'), 'a') as outfile:
+                outfile.write(str(start_sizes))
+                outfile.write('\n')
     
+    if save_start_sizes:
+        # save the unaltered (entries will be of differing lengths) set of start sizes
+        # as a pickle object for later use 
+        with open(os.path.join(out_dir, filename + '.pkl'), 'wb') as outfile:
+            pickle.dump(to_plot, outfile)    
     
     # prep each entry of to_plot.  Not every iteration will have the same num
     # of entries.  Just repeat the last entry as necessary
@@ -750,7 +772,9 @@ def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_it
     plt.legend()
     plt.ylabel('starting population', fontsize=16)
     plt.xlabel('iterations', fontsize=16)
-    plt.savefig(os.path.join(out_dir, 'starting_size_graph.png'), format='png')
+    plt.savefig(os.path.join(out_dir, name + '_starting_size_graph.png'), format='png')
     plt.show()
     
 #%%
+
+
