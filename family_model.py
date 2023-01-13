@@ -632,17 +632,6 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
 
     return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out
 
-
-#%%
-"""
-below is example code to run the model
-"""
-# #
-name = 'tikopia_1930'
-marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-num_people = 41
-G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
-
 #%%
 def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True): # n = number of initial nodes
     
@@ -754,4 +743,24 @@ def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_it
     plt.savefig(os.path.join(out_dir, 'starting_size_graph.png'), format='png')
     plt.show()
     
+#%%
+"""
+below is example code to run the model
+"""
+import time
+
+# get the start time
+st = time.time()
+
+# create a file to print output
+name = 'tikopia_1930'
+marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
+num_people = find_start_size(name)
+print("num_people:", num_people)
+G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
+et = time.time()
+
+# get the execution time
+elapsed_time = et - st
+print('Execution time:', elapsed_time, 'seconds')
 #%%
