@@ -753,7 +753,7 @@ import time
 st = time.time()
 
 # create a file to print output
-name = 'hatfields_and_mccoys'
+name = 'arara'
 marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
 num_people = find_start_size(name)[-1]
 print("num_people:", num_people)
@@ -764,3 +764,8 @@ et = time.time()
 elapsed_time = et - st
 print('Execution time:', elapsed_time, 'seconds')
 #%%
+name = 'arara'
+marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
+num_people = 8
+print("num_people:", num_people)
+G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
