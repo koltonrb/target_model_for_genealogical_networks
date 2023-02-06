@@ -753,7 +753,7 @@ import time
 st = time.time()
 
 # create a file to print output
-name = 'arara'
+name = 'vedda_1905_as04'
 marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
 num_people = find_start_size(name)[-1]
 print("num_people:", num_people)
