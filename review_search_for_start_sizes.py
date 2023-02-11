@@ -197,7 +197,9 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
             if tries > max_tries:
                 print(name + ' died out five times with start size {}'.format(num_people))
                 break
-            
+        marriage_KL_div = KL_Divergence(model_marriage_distances, target_marriage_dist)
+        child_KL_div = KL_Divergence(model_children_per_couple, target_child_dist) 
+        
         model_marriage_distances = np.array(model_marriage_distances)
         target_marriage_dist = np.array(target_marriage_dist)
         
@@ -205,7 +207,7 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
         target_percent_inf_marriages = sum(target_marriage_dist == -1) / len(target_marriage_dist)
         
         if len(model_marriage_distances[model_marriage_distances != -1]) != 0: 
-            
+            # creates histogram of marriage distributions excluding infinite distance unions            
             model_max_bin = int(np.max(model_marriage_distances[model_marriage_distances != -1]))
             target_max_bin = int(np.max(target_marriage_dist[target_marriage_dist != -1]))
             max_bin = max(model_max_bin, target_max_bin)
@@ -222,6 +224,8 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
             title += r"target: {}% $\infty$-distance marriages".format(np.round(target_percent_inf_marriages, 3)*100)
             title += '\n'
             title += r"model: {}% $\infty$-distance marriages".format(np.round(model_percent_inf_marriages, 3)*100)
+            title += '\n'
+            title += f'KL-div: {marriage_KL_div:.3e}'
             plt.title(title)
             if not save_plots:
                 plt.show()
@@ -230,14 +234,15 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
                 plt.savefig(os.path.join(marriage_hist_path,  name + '_finite_marriage_distributions' + '.png'), format='png')
             plt.clf()  # clear out the current figure
         
+        # creates histogram of marriage distributions including infinite distance marriages 
         model_max_bin = int(np.max(model_marriage_distances))
         target_max_bin = int(np.max(target_marriage_dist))
         max_bin = max(model_max_bin, target_max_bin)
         
         fig = plt.figure(figsize=(12,9), dpi=300)
         # uncomment these lines if you want the inf distance marriage bar (at -1) to show 
-        plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target')
-        plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='model')
+        plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target', density=marriage_density)
+        plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='model', density=marriage_density)
         # uncomment these two lines if you want to only show finite-distance marriage distributions 
         #plt.hist(target_marriage_dist, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='target', density=marriage_density)
         #plt.hist(model_marriage_distances, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='model', density=marriage_density)
@@ -246,6 +251,8 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
         title += r"target: {}% $\infty$-distance marriages".format(np.round(target_percent_inf_marriages, 3)*100)
         title += '\n'
         title += r"model: {}% $\infty$-distance marriages".format(np.round(model_percent_inf_marriages, 3)*100)
+        title += '\n'
+        title += f'KL-div: {marriage_KL_div:.3e}'
         plt.title(title)
         if not save_plots:
             plt.show()
@@ -254,6 +261,7 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
             plt.savefig(os.path.join(marriage_hist_path,  name + '_marriage_distributions' + '.png'), format='png')
         plt.clf()  # clear out the current figure
         
+        # creates histogram of children per couple distributions 
         model_max_bin = int(np.max(model_children_per_couple))
         target_max_bin = int(np.max(target_child_dist))
         max_bin = max(model_max_bin, target_max_bin)
@@ -270,6 +278,8 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
         title += r"target: {} avg. children per couple".format(np.round(np.mean(target_child_dist), 3))
         title += '\n'
         title += r"model: {} avg. children per couple".format(np.round(np.mean(model_children_per_couple), 3))
+        title += '\n'
+        title += f'KL-div: {child_KL_div:.3e}'
         plt.title(title)
         if not save_plots:
             plt.show()
