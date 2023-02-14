@@ -18,7 +18,7 @@ import ast
 
 # infinite_distances dictionary shows 'name' of all networks in data
 with open('./UnionDistances/infinite_distances.txt') as f:
-    inf_distances = f.readline()
+inf_distances = f.readline()
 infinite_distances = ast.literal_eval(inf_distances)
 for k in infinite_distances:
     print(k)
