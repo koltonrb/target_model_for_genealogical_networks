@@ -396,39 +396,33 @@ def update_distances_kolton(D, n, unions, families, indices):
 
     # compute new distances
     unions = list(unions)
-    # unions
-    # u, union = 0, (19, 43)
-    # other = (21, 35)
-
+    
     for u, union in enumerate(unions):
         u_children = families[u]
+        
+        for other in unions[u:][1:]:
+            o_children = families[unions.index(other)]
 
-        for other in unions:
-            if (union != other):
-                o_children = families[unions.index(other)]
+            # find all possible distances from union to other
+            d1 = D[indices[union[0]]][indices[other[0]]]
+            d2 = D[indices[union[1]]][indices[other[0]]]
+            d3 = D[indices[union[0]]][indices[other[1]]]
+            d4 = D[indices[union[1]]][indices[other[1]]]
 
-                # find all possible distances from union to other
-                d1 = D[indices[union[0]]][indices[other[0]]]
-                d2 = D[indices[union[1]]][indices[other[0]]]
-                d3 = D[indices[union[0]]][indices[other[1]]]
-                d4 = D[indices[union[1]]][indices[other[1]]]
+            possible_distances = np.array([d1, d2, d3, d4])
+            possible_distances = possible_distances[possible_distances > -1]  # IE where NOT infinite
+            # compute distance between children of union and children of other
+            d = np.min(possible_distances) + 2
+            for uc in u_children:
+                for oc in o_children:
+                    D1[new_indices[uc]][new_indices[oc]] = d
+                    D1[new_indices[oc]][new_indices[uc]] = d
 
-                possible_distances = np.array([d1, d2, d3, d4])
-                possible_distances = possible_distances[possible_distances > -1]  # IE where NOT infinite
-                # compute distance between children of union and children of other
-                d = np.min(possible_distances) + 2
-                for uc in u_children:
-                    for oc in o_children:
-                        D1[new_indices[uc]][new_indices[oc]] = d
-                        D1[new_indices[oc]][new_indices[uc]] = d
-
-        # add immediate family distances
-        for ch in u_children:
-            # add sibling distances
-            for c in u_children:
-                if ch != c:
-                    D1[new_indices[ch]][new_indices[c]] = 2
-                    D1[new_indices[c]][new_indices[ch]] = 2
+        for c, ch in enumerate(u_children):
+            for sibling in u_children[c:][1:]:
+                D1[new_indices[ch]][new_indices[sibling]] = 2
+                D1[new_indices[sibling]][new_indices[ch]] = 2 
+            
     return D1, new_indices
 
 
@@ -447,7 +441,7 @@ def check_indices(indices):
 
 #%%
 # TODO: what do we actually want this to return?
-def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, children_dist, name, when_to_stop=np.inf, num_gens=np.inf, save=True):
+def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, children_dist, name, when_to_stop=np.inf, num_gens=np.inf, save=True, out_dir='output'):
     """
     PARAMETERS:
         num_people (int): number of people (nodes) to include in initial
@@ -599,7 +593,7 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
      
         # ??? save output at each generation
     if save:
-        output_path = makeOutputDirectory("output", name)
+        output_path = makeOutputDirectory(out_dir, name)
         df = pd.DataFrame(data=summary_statistics, columns=['num_people', 'num_immigrants', 'num_children'])
         df.index.name='generation'
         df.to_csv(os.path.join(output_path, str(name)+'_summary_statistics.csv'))
@@ -631,21 +625,25 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         #     with open(Cname, 'wb') as fcp:
         #         pickle.dump(all_children, fcp)
 
-    return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out
-
+        return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, output_path 
+    
+    else:
+        return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out
 
 #%%
 """
 below is example code to run the model
 """
 # #
-# name = 'hatfields_and_mccoys'
-# num_people = 100
-# marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-# G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
+name = 'chuukese_1947_1940'
+num_people = 5
+marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
+G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, save=False, when_to_stop=size_goal)
 
 #%%
 def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True): # n = number of initial nodes
+    counter = 0 
+    
     filename = name + '_' + filename
     marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
     greatest_lower_bound = 2
@@ -661,6 +659,7 @@ def find_start_size(name, out_directory='start_size', filename='start_size', max
     while dies_out != dies_out_threshold: # while the number of times the model dies out is not equal to the threshold of dying:
 
         for i in range(max_iters):
+            counter += 1
             G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies = human_family_network(num_people,
                                                                                                                 marriage_dist,
                                                                                                                 prob_finite_marriage,
@@ -709,9 +708,93 @@ def find_start_size(name, out_directory='start_size', filename='start_size', max
         with open(os.path.join(out_directory, filename + '.pkl'), 'wb') as outfile:
             pickle.dump(start_sizes, outfile)
     
-    return start_sizes
+    return start_sizes, counter 
 #%%
+def find_start_size2(name, 
+                     out_directory='start_size', 
+                     filename='start_size', 
+                     max_iters=100,
+                     dies_out_threshold=5,  
+                     verbose=False, 
+                     save_start_sizes=True, 
+                     random_start=True, 
+                     load_data=False, 
+                     marriage_dist=None, 
+                     num_marriages=None, 
+                     prob_inf_marriage=None, 
+                     prob_finite_marriage=None, 
+                     child_dist=None, 
+                     size_goal=None): 
+    filename = name + '_' + filename
+    if load_data:
+        marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
+    
+    greatest_lower_bound = 2
+    least_upper_bound = size_goal
+    
+    if random_start: 
+        num_people = np.random.randint(greatest_lower_bound, size_goal)
+    else:
+        num_people = size_goal//2
+    dies_out = 0 # counter for the number of times the model dies out
+    
+    start_sizes = [num_people]
 
+    max_iters = max_iters - dies_out_threshold 
+    while dies_out != dies_out_threshold: # while the number of times the model dies out is not equal to the threshold of dying:
+
+        for i in range(max_iters):
+            G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies = human_family_network(num_people,
+                                                                                                                marriage_dist,
+                                                                                                                prob_finite_marriage,
+                                                                                                                prob_inf_marriage,
+                                                                                                                child_dist,
+                                                                                                                name,
+                                                                                                                when_to_stop=size_goal,
+                                                                                                                save=False)
+            if dies:
+                dies_out += 1
+            if dies_out > dies_out_threshold:
+                break
+        
+        
+        if greatest_lower_bound >= least_upper_bound - 1:
+            # IE the ideal lies between these two integers
+            # so return the larger
+            num_people = least_upper_bound
+            break
+        elif dies_out == dies_out_threshold:
+            break
+        elif dies_out > dies_out_threshold:  # we want to increase num_people
+            greatest_lower_bound = num_people  # current iteration died out too frequently.  Won't need to search below this point again.
+            num_people = (num_people + least_upper_bound) // 2 # midpoint between num_people and size_goal
+            dies_out = 0
+            
+        elif dies_out < dies_out_threshold: # we want to decrease num_people
+            least_upper_bound = num_people  # current iteration died out too infrequently.  Won't need to search above this point again
+            num_people = (greatest_lower_bound + num_people) // 2 # midpoint between 2 and num_people
+            dies_out = 0
+            
+        if verbose:
+            print('greatest_lower_bound: ', greatest_lower_bound)
+            print('least_upper_bound: ', least_upper_bound)
+            print('starting population: ', num_people)
+        start_sizes.append(num_people)
+        
+        
+    if save_start_sizes:
+        if not os.path.exists(out_directory):
+            os.makedirs(out_directory)
+        filename = find_file_version_number(out_directory, filename, extension='.txt')
+        # save a text file (one integer per line)
+        with open(os.path.join(out_directory, filename +'.txt'), 'w') as outfile:
+            outfile.writelines([str(k) + '\n' for k in start_sizes])
+        # save the actual object
+        with open(os.path.join(out_directory, filename + '.pkl'), 'wb') as outfile:
+            pickle.dump(start_sizes, outfile)
+    
+    return start_sizes
+#%%    
 
 def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, save_individual_start_sizes=False, random_start=True, show_plot=False):
     #find out directory.  Every iteration in this function call will output to the same file
