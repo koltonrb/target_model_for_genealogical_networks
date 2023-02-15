@@ -9,6 +9,7 @@ from sklearn.neighbors import KernelDensity as KDE
 from scipy import interpolate
 import itertools
 import pickle
+import matplotlib.pyplot as plt
 
 #%%
 def add_marriage_edges(all_fam, all_unions, D, marriage_probs, p, ncp, n, infdis):
@@ -354,7 +355,9 @@ def human_family_network(n, gen, marriage_dist, p, ncp, infdis, children_dist, n
             pickle.dump(all_unions, fup) 
         Cname = "{}_C{}".format(name, i)   # save children
         with open(Cname, 'wb') as fcp:
-            pickle.dump(all_children, fcp)   
+            pickle.dump(all_children, fcp)
+        nx.draw(G, with_labels=True, font_weight='bold')
+        plt.show()
         
         # create unions between nodes to create next generation
         unions, no_unions, all_unions, n, m, infdis = add_marriage_edges(all_fam, all_unions, D, marriage_probs, p, ncp, n, infdis)
