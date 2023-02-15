@@ -220,11 +220,14 @@ for i in range(gen+2):
     print("Generation :", i)
 
     # read in file
-#     gpickle_file = nx.read_gpickle("{}_G{}.gpickle".format(name,i))
-#     G = gpickle_file
+    # gpickle_file = nx.read_gpickle("{}_G{}.gpickle".format(name,i))
+    # G = gpickle_file
     
     Gcc = sorted(nx.connected_components(G), key=len, reverse=True)
+    # print(Gcc)
     G0 = G.subgraph(Gcc[0])
+    # looks like it always graphs the same number of nodes and edges
+    print(G0)
     nx.draw(G0, node_size=15)
     plt.show()
 
