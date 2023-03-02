@@ -2,15 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 # from graph_attributes import *
-from scipy.stats import linregress
-import pandas as pd
-import pyarrow.feather as feather
-import ast
-import random
+# from scipy.stats import linregress
+# import pandas as pd
+# import pyarrow.feather as feather
+# import ast
+# import random
 import os
 import shlex
 import regex as re
-
+import glob
+import pickle 
+from family_model import get_graph_stats
+#%%
 
 def content_list(graph_name):
     """
@@ -28,6 +31,7 @@ def content_list(graph_name):
     return list(contents[noempties]) # turn it back into a list and return
 
 
+#%%
 def separate_parts(graph_name,edge_type):
     """Count the number of edges in a pajek graph file.
            Parameters:
@@ -70,7 +74,7 @@ def separate_parts(graph_name,edge_type):
         try:
             a_ind = contents.index('*arcs')
         except:
-            e_ind = 0
+            a_ind = 0
         alter_ind = min(a_ind,e_ind)
         # get names and genders
         name_dict = {}
@@ -83,9 +87,9 @@ def separate_parts(graph_name,edge_type):
                 print('Vertex Error after' + str(num))
             if gen == 'triangle':
                 gen = 'M'
-            elif gen == 'ellipse' or 'circle':
+            elif gen == 'ellipse' or gen == 'circle':
                 gen = 'F'
-            elif gen == 'diamond' or 'square':
+            elif gen == 'diamond' or gen == 'square':
                 gen = 'U'
             else:
                 print('Error in gender:', node)
@@ -107,6 +111,7 @@ def separate_parts(graph_name,edge_type):
             return get_tuples(contents[start_ind+1:alter_ind])
         else:
             return get_tuples(contents[start_ind+1:])
+#%%
 
 
 def graph_with_attributes(graph_name, directed = False,pc_only = False):
@@ -129,7 +134,8 @@ def graph_with_attributes(graph_name, directed = False,pc_only = False):
                 print('Error: parent-child edges from',graph_name)
     else:
         g = nx.DiGraph()
-        g.add_nodes_from(np.arange(nodes[0])+1)
+        #g.add_nodes_from(np.arange(nodes[0])+1)
+        g.add_nodes_from(nodes[1].keys())
         g.add_edges_from(pc_edges)
     # assign names and gender attributes
     nx.set_node_attributes(g,nodes[1],'Name')
@@ -144,14 +150,31 @@ def graph_with_attributes(graph_name, directed = False,pc_only = False):
     nx.set_edge_attributes(g,edge_type_dict,'Relationship')
     # return graph with attributes
     return g
+#%%
 
 
-def get_graphs_and_names(path = '../Original_Sources',directed = False,sort = False):
+def get_names(path = './Original_Sources', save_paths=True):
     """Create list of nx graphs from original sources"""
+    name_pattern = re.compile("(?<=-).*(?=-)")
     name_list = os.listdir(path)
     n = len(name_list)
     for i in range(n):
-        name_list[i] = path + '/' + name_list[i]
+        if save_paths:
+            name_list[i] = path + '/' + name_list[i]
+        else:
+            name_list[i] = name_pattern.findall(name_list[i])[0]
+    return name_list 
+#%%
+
+
+def get_graphs_and_names(path = 'Original_Sources', directed=False, sort=False):
+    """Create list of nx graphs from original sources"""
+    # name_list = os.listdir(path)
+    # n = len(name_list)
+    # for i in range(n):
+    #     name_list[i] = path + '/' + name_list[i]
+    name_list = glob.glob(os.path.join(path, '*.paj'))  # searches directory at path for pajek files
+    name_list += glob.glob(os.path.join(path, '**', '*.paj'))  # searches its subdirs for pajek files 
     # get graphs and names
     graph_list = []
     graph_names = []
@@ -169,6 +192,7 @@ def get_graphs_and_names(path = '../Original_Sources',directed = False,sort = Fa
         return g_list,g_names
     else:
         return graph_list, graph_names
+#%%
 
 
 def get_marriage_distances_kolton(G, marriage_edges, name='', plot=True, save=True):
@@ -255,9 +279,10 @@ def get_marriage_distances_kolton(G, marriage_edges, name='', plot=True, save=Tr
     if len(distances_array[distances_array != -1]) == 0:
         print("OJO! All distances were infinite!")
     return distances, num_inf_marriages, percent_inf_marraiges
+#%%
 
 
-def build_marriage_hist_kolton(name, plot=True, save=True, path='../Original_Sources'):
+def build_target_marriage_hist_kolton(name, plot=True, save=True, path='./Original_Sources'):
     """ helper function.  Returns the same things as
     get_marraige_distances_kolton() and saves histogram of the marraige
     distances for a given graph name.
@@ -299,6 +324,7 @@ def build_marriage_hist_kolton(name, plot=True, save=True, path='../Original_Sou
     return distances, num_inf_marriages, percent_inf_marraiges
 
 
+
 def find_children(g_num, graph_names):
     """
     Finds number of children per married couple in the graph
@@ -330,7 +356,7 @@ def find_children(g_num, graph_names):
     return count
 
 
-def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_number_path='../ChildrenNumber/'):
+def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_number_path='./ChildrenNumber/', plot=False):
     graphs, graph_names = get_graphs_and_names(directed=True)
     name_pattern = re.compile("(?<=-).*(?=-)")
 
@@ -340,7 +366,7 @@ def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_
         if name == "../Original_Sources/kinsources-warao-oregraph.paj":
             continue
         name = name_pattern.findall(name)[0]
-        distances, num_inf_marriages, percent_inf_marraiges = build_marriage_hist_kolton(name)
+        distances, num_inf_marriages, percent_inf_marraiges = build_target_marriage_hist_kolton(name, plot=plot)
         master_distances += distances
         count += 1
         try:
@@ -354,7 +380,7 @@ def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_
         except FileExistsError as e:
             print(distance_path + name + ".txt' file exists.  Skipping. ")
 
-        g_num = graph_names.index('../Original_Sources/kinsources-'+name+'-oregraph.paj')
+        g_num = graph_names.index('./Original_Sources/kinsources-'+name+'-oregraph.paj')
         vertex_names, marriage_edges, child_edges = separate_parts(graph_names[g_num], 'A')
 
         # now save list of children per couple to a text file
@@ -370,3 +396,42 @@ def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_
             outfile.write('\n')
     except FileExistsError as e:
         print("\'./Kolton_distances/master_distances_104.txt\' file exists.  Skipping. ")
+
+
+#%%
+path_to_paj = './output/arara_4/model-arara-oregraph.paj'
+name = 'arara_1'
+
+# path_to_paj = graph_names[11]
+def find_model_marriage_child_distributions_from_paj(path_to_paj, plot=False, save=False):
+    # genealogical network
+    G = graph_with_attributes(path_to_paj, directed=True)
+
+    # get all parts of graph
+    vertex_names, marriage_edges, child_edges = separate_parts(path_to_paj,'A')
+    # marraige info
+    distances, num_inf_marriages, percent_inf_marraiges = get_marriage_distances_kolton(G, marriage_edges, name='', plot=plot, save=save)
+    # child info 
+    children_per_couple = find_children(0, [path_to_paj])  # hate that formatting, but I think that it will work 
+    
+    return distances, num_inf_marriages, percent_inf_marraiges, children_per_couple 
+
+#%% 
+def compile_historgrams_of_target_model_and_paj_distributions(path_to_model, name):
+    # calculate distances/children per couple from the pajek file
+    # NOTE: this uses ONLY the ACTUAL network structure and ignores the artificially-imposed distances from our model's initial generation setup 
+    paj_distances, paj_num_inf_marriages, paj_percent_inf_marriages, paj_children_per_couple = find_model_marriage_child_distributions_from_paj(os.path.join(path_to_model, 'model-'+name+'oregraph.paj'))
+    
+    # load the distances, children per couple that were saved during construction 
+    # NOTE: these distances are calculated acounting for the artificially-imposed distances from our model's intial generation setup 
+    #       (IE those distances which are imposed in our initial generation's distance matrix D, but for which there is not a corresponding 
+    #        structure in the actual graph object)
+    with open(os.path.join(path_to_model, name+'_marriage_distances.pkl'), 'rb') as infile: 
+        artificial_distances =  pickle.load(infile)
+    with open(os.path.join(path_to_model, name+'_children_per_couple.pkl'), 'rb') as infile:
+        artificial_children_per_couple = pickle.load(infile) 
+    
+    # load the target data 
+    target_distances, target_num_marriages, target_prob_inf_marriage, target_prob_finite_marriage, target_child_dist, target_size_goal = get_graph_stats(name)
+    
+    

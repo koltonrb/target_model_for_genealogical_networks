@@ -1,4 +1,4 @@
-import pickle
+#import pickle
 import ast
 import regex as re
 from scipy.special import rel_entr
@@ -138,21 +138,21 @@ def KL_Divergence(model_distance, target_distance):
     return JensenShannon
 
 #%%
-# example to load model marriage distribution
-with open('output\\tikopia_1930_1\\tikopia_1930_marriage_distances.pkl', 'rb') as infile:
-    model_distance = pickle.load(infile)
-# example to load target marriage distribution
-name = 'tikopia_1930'
-target_distance, num_marriages, prob_inf_marriage, prob_finite_marriage, children_dist, num_people = get_graph_stats(name)
+# # example to load model marriage distribution
+# with open('output\\tikopia_1930_1\\tikopia_1930_marriage_distances.pkl', 'rb') as infile:
+#     model_distance = pickle.load(infile)
+# # example to load target marriage distribution
+# name = 'tikopia_1930'
+# target_distance, num_marriages, prob_inf_marriage, prob_finite_marriage, children_dist, num_people = get_graph_stats(name)
 
-#%%
+# #%%
 
-kl = KL_Divergence(model_distance, target_distance)
+# kl = KL_Divergence(model_distance, target_distance)
 
-#%%
-with open('output\\tikopia_1930_6\\tikopia_1930_children_per_couple.pkl', 'rb') as infile:
-    model_distance = pickle.load(infile)
-childkl = KL_Divergence(model_distance, children_dist)
+# #%%
+# with open('output\\tikopia_1930_6\\tikopia_1930_children_per_couple.pkl', 'rb') as infile:
+#     model_distance = pickle.load(infile)
+# childkl = KL_Divergence(model_distance, children_dist)
 ############################################################################################################################
 #%%
 # def test_model_using_KL_Divergence():
