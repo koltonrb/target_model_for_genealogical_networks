@@ -10,9 +10,11 @@ import numpy as np
 import os 
 from get_model_parameters import get_names
 from family_model import *
+from get_model_parameters import find_model_marriage_child_distributions_from_paj
 from KL_divergence import KL_Divergence 
 import ast
 import pickle 
+from matplotlib import pyplot as plt 
 
 def find_files(out_directory, filename, ):
     ver = 1
@@ -147,7 +149,7 @@ def measure_KL_div(iters=1, use_latest=True, path_to_start_sizes_pkl=os.path.joi
 
 
 #%%
-def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=os.path.join('data_set_stats', 'review_of_start_sizes_1'), save_models=True, save_plots=True, marriage_density=True, child_density=True):
+def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=os.path.join('data_set_stats', 'review_of_start_sizes_1'), save_models=True, save_plots=True, marriage_density=True, child_density=True, side_by_side=True):
     paths = find_files('data_set_stats', 'review_of_start_sizes')
     if use_latest:    
         path_to_start_sizes_pkl = paths[-1]
@@ -197,36 +199,61 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
             if tries > max_tries:
                 print(name + ' died out five times with start size {}'.format(num_people))
                 break
-        marriage_KL_div = KL_Divergence(model_marriage_distances, target_marriage_dist)
-        child_KL_div = KL_Divergence(model_children_per_couple, target_child_dist) 
+            
+        # calculate distances/children per couple from the pajek file
+        # NOTE: this uses ONLY the ACTUAL network structure and ignores the artificially-imposed distances from our model's initial generation setup 
+        paj_marriage_distances, paj_num_inf_marriages, paj_percent_inf_marriages, paj_children_per_couple = find_model_marriage_child_distributions_from_paj(os.path.join(output_path, 'model-'+name+'-oregraph.paj'))
+        
+        artificial_marriage_KL_div = KL_Divergence(model_marriage_distances, target_marriage_dist)
+        artificial_child_KL_div = KL_Divergence(model_children_per_couple, target_child_dist) 
+        
+        actual_marriage_KL_div = KL_Divergence(paj_marriage_distances, target_marriage_dist)
+        actual_child_KL_div = KL_Divergence(paj_children_per_couple, target_child_dist)
         
         model_marriage_distances = np.array(model_marriage_distances)
+        paj_marriage_distances = np.array(paj_marriage_distances) 
         target_marriage_dist = np.array(target_marriage_dist)
         
         model_percent_inf_marriages = sum(model_marriage_distances == -1) / len(model_marriage_distances)
         target_percent_inf_marriages = sum(target_marriage_dist == -1) / len(target_marriage_dist)
+        # paj_percent_inf_marriages defined above 
         
         if len(model_marriage_distances[model_marriage_distances != -1]) != 0: 
             # creates histogram of marriage distributions excluding infinite distance unions            
             model_max_bin = int(np.max(model_marriage_distances[model_marriage_distances != -1]))
+            paj_max_bin = int(np.max(paj_marriage_distances[paj_marriage_distances != -1]))
             target_max_bin = int(np.max(target_marriage_dist[target_marriage_dist != -1]))
-            max_bin = max(model_max_bin, target_max_bin)
+            max_bin = max(model_max_bin, paj_max_bin, target_max_bin)
             
             fig = plt.figure(figsize=(12,9), dpi=300)
             # uncomment these lines if you want the inf distance marriage bar (at -1) to show 
             #plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target')
             #plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='model')
             # uncomment these two lines if you want to only show finite-distance marriage distributions 
-            plt.hist(target_marriage_dist, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='target', density=marriage_density)
-            plt.hist(model_marriage_distances, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='model', density=marriage_density)
+            if not side_by_side:
+                plt.hist(target_marriage_dist, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='target', density=marriage_density)
+                plt.hist(model_marriage_distances, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='artificial distances model', density=marriage_density)
+                plt.hist(paj_marriage_distances, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='actual distances model', density=marriage_density)
+            else:
+                plt.hist([target_marriage_dist, model_marriage_distances, paj_marriage_distances], 
+                         bins=[k for k in range(max_bin + 2)], 
+                         range=(-1, max_bin+2), 
+                         label=['target', 'artificial distances model', 'actual distances model'],
+                         density=marriage_density)
             plt.legend()
             title = name + '\n'
-            title += r"target: {}% $\infty$-distance marriages".format(np.round(target_percent_inf_marriages, 3)*100)
+            title += r"target: {}% $\infty$-distance marriages".format(str(np.round(target_percent_inf_marriages, 3)*100)[:4])
             title += '\n'
-            title += r"model: {}% $\infty$-distance marriages".format(np.round(model_percent_inf_marriages, 3)*100)
+            title += r"artificial distances model: {}% $\infty$-distance marriages".format(str(np.round(model_percent_inf_marriages, 3)*100)[:4])
             title += '\n'
-            title += f'KL-div: {marriage_KL_div:.3e}'
-            plt.title(title)
+            title += r"actual distances model: {}% $\infty$-distance marriages".format(str(np.round(paj_percent_inf_marriages, 3)*100)[:4])
+            title += '\n'
+            
+            title += fr'$JS(target\Vert artificial) =  {artificial_marriage_KL_div:.3e}$'
+            title += '\n'
+            title += fr'$JS(target\Vert actual) =  {actual_marriage_KL_div:.3e}$'
+            
+            plt.title(title, fontsize=12, pad=2)
             if not save_plots:
                 plt.show()
             else:
@@ -236,24 +263,39 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
         
         # creates histogram of marriage distributions including infinite distance marriages 
         model_max_bin = int(np.max(model_marriage_distances))
+        paj_max_bin = int(np.max(paj_marriage_distances))
         target_max_bin = int(np.max(target_marriage_dist))
-        max_bin = max(model_max_bin, target_max_bin)
+        max_bin = max(model_max_bin, paj_max_bin, target_max_bin)
         
         fig = plt.figure(figsize=(12,9), dpi=300)
         # uncomment these lines if you want the inf distance marriage bar (at -1) to show 
-        plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target', density=marriage_density)
-        plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='model', density=marriage_density)
+        if not side_by_side:
+            plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target', density=marriage_density)
+            plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='artificial distances model', density=marriage_density)
+            plt.hist(paj_marriage_distances, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='actual distances model', density=marriage_density)
+        else:
+            plt.hist([target_marriage_dist, model_marriage_distances, paj_marriage_distances], 
+                     bins=[k for k in range(-1, max_bin + 2)], 
+                     range=(-2, max_bin+2), 
+                     label=['target', 'artificial distances model', 'actual distances model'], 
+                     density=marriage_density)
         # uncomment these two lines if you want to only show finite-distance marriage distributions 
         #plt.hist(target_marriage_dist, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='target', density=marriage_density)
         #plt.hist(model_marriage_distances, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='model', density=marriage_density)
         plt.legend()
         title = name + '\n'
-        title += r"target: {}% $\infty$-distance marriages".format(np.round(target_percent_inf_marriages, 3)*100)
+        title += r"target: {}% $\infty$-distance marriages".format(str(np.round(target_percent_inf_marriages, 3)*100)[:4])
         title += '\n'
-        title += r"model: {}% $\infty$-distance marriages".format(np.round(model_percent_inf_marriages, 3)*100)
+        title += r"artificial distances model: {}% $\infty$-distance marriages".format(str(np.round(model_percent_inf_marriages, 3)*100)[:4])
         title += '\n'
-        title += f'KL-div: {marriage_KL_div:.3e}'
-        plt.title(title)
+        title += r"actual distances model: {}% $\infty$-distance marriages".format(str(np.round(paj_percent_inf_marriages, 3)*100)[:4])
+        title += '\n'
+        
+        title += fr'$JS(target\Vert artificial) =  {artificial_marriage_KL_div:.3e}$'
+        title += '\n'
+        title += fr'$JS(target\Vert actual) =  {actual_marriage_KL_div:.3e}$'
+        
+        plt.title(title, pad=2)
         if not save_plots:
             plt.show()
         else:
@@ -263,24 +305,40 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
         
         # creates histogram of children per couple distributions 
         model_max_bin = int(np.max(model_children_per_couple))
+        paj_max_bin = int(np.max(paj_children_per_couple))
         target_max_bin = int(np.max(target_child_dist))
-        max_bin = max(model_max_bin, target_max_bin)
+        max_bin = max(model_max_bin, paj_max_bin, target_max_bin)
         
         fig = plt.figure(figsize=(12,9), dpi=300)
         # uncomment these lines if you want the inf distance marriage bar (at -1) to show 
         #plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target')
         #plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='model')
-        # uncomment these two lines if you want to only show finite-distance marriage distributions 
-        plt.hist(target_child_dist, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='target', density=child_density)
-        plt.hist(model_children_per_couple, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='model', density=child_density)
+        # uncomment these two lines if you want to only show finite-distance marriage distributions
+        if not side_by_side:
+            plt.hist(target_child_dist, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='target', density=child_density)
+            plt.hist(model_children_per_couple, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='model', density=child_density)
+            plt.hist(paj_children_per_couple, bins=[k for k in range(max_bin + 2)], range=(-1, max_bin+2), alpha=0.65, label='actual distances model', density=child_density)
+        else:
+            plt.hist([target_child_dist, model_children_per_couple, paj_children_per_couple],
+                     bins=[k for k in range(max_bin + 2)], 
+                     range=(-1, max_bin+2), 
+                     label=['target', 'artificial distances model', 'actual distances model'],
+                     density=child_density)
         plt.legend()
         title = name + '\n'
-        title += r"target: {} avg. children per couple".format(np.round(np.mean(target_child_dist), 3))
+        title += r"target: {} avg. children per couple".format(str(np.round(np.mean(target_child_dist), 3))[:4])
         title += '\n'
-        title += r"model: {} avg. children per couple".format(np.round(np.mean(model_children_per_couple), 3))
+        title += r"artificial distances model: {} avg. children per couple".format(str(np.round(np.mean(model_children_per_couple), 3))[:4])
         title += '\n'
-        title += f'KL-div: {child_KL_div:.3e}'
-        plt.title(title)
+        title += r"actual distances model: {}% avg. children per couple".format(str(np.round(np.mean(paj_children_per_couple), 3))[:4])
+        title += '\n'
+        
+        title += fr'$JS(target\Vert artificial) =  {artificial_child_KL_div:.3e}$'
+        title += '\n'
+        title += fr'$JS(target\Vert actual) =  {actual_child_KL_div:.3e}$'
+        
+        
+        plt.title(title, pad=2)
         if not save_plots:
             plt.show()
         else:
@@ -289,3 +347,10 @@ def visualize_distribution_histograms(use_latest=True, path_to_start_sizes_pkl=o
         plt.clf()  # clear out the current figure
             
 #%%
+# with open('output/arara_4/arara_children_per_couple.pkl', 'rb') as infile:
+#     model_children_per_couple = pickle.load(infile)
+# with open('output/arara_4/arara_marriage_distances.pkl', 'rb') as infile:
+#     model_marriage_distances = pickle.load(infile)
+    
+if name=="__main__":
+    visualize_distribution_histograms()
