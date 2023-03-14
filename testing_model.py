@@ -50,7 +50,7 @@ data_parameters
                                        # Graph failed: ./Original_Sources/kinsources-warao-oregraph.paj"
 
 # name of chosen network--see infinite_distances dictionary for help with names of networks (run second cell to see)
-name = 'ainu_1880_as01'
+name = 'tikopia_1930'
 
 # get data--number of marriage edges, probability of marriage, probability of nonconnected marriage parameters
 m_e, P, NCP = get_some_parameters(name)

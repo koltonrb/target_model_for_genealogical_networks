@@ -477,6 +477,8 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         unions:
         num_children_per_couple:
     """
+    if save: 
+        output_path = makeOutputDirectory("output", name)
     dies_out = False
 
     all_marriage_edges = []
@@ -597,8 +599,19 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         i += 1
      
         # ??? save output at each generation
+        if save:
+            
+            Gname = Gname = "{}/{}_G_gen{}.gpickle".format(output_path, name, i)   # save graph
+            nx.write_gpickle(G, Gname)
+            
+            Dname = "{}/{}_marriage_distances_gen{}".format(output_path, name, i) +'.pkl' # save marriage distances
+            with open(Dname, 'wb') as myfile:
+                pickle.dump(all_marriage_distances, myfile)
+            Cname = "{}/{}_children_per_couple_gen{}".format(output_path, name, i) + '.pkl'  # save children
+            with open(Cname, 'wb') as fcp:
+                pickle.dump(all_children_per_couple, fcp)
     if save:
-        output_path = makeOutputDirectory("output", name)
+        
         df = pd.DataFrame(data=summary_statistics, columns=['num_people', 'num_immigrants', 'num_children'])
         df.index.name='generation'
         df.to_csv(os.path.join(output_path, str(name)+'_summary_statistics.csv'))
@@ -633,7 +646,7 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
     return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out
 
 #%%
-def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True): # n = number of initial nodes
+def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5, verbose=False, save_start_sizes=True, random_start=True): # n = number of initial nodes
     
     marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
     greatest_lower_bound = 2
@@ -700,7 +713,6 @@ def find_start_size(name, out_directory='start_size', filename='start_size', max
     return start_sizes
 #%%
 
-
 def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True):
     #find out directory.  Every iteration in this function call will output to the same file
     out_dir = makeOutputDirectory(out_directory, name)
@@ -753,9 +765,9 @@ import time
 st = time.time()
 
 # create a file to print output
-name = 'vedda_1905_as04'
+name = 'kel_owey'
 marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-num_people = find_start_size(name)[-1]
+num_people = find_start_size(name=name)[-1]
 print("num_people:", num_people)
 G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
 et = time.time()
@@ -764,8 +776,8 @@ et = time.time()
 elapsed_time = et - st
 print('Execution time:', elapsed_time, 'seconds')
 #%%
-name = 'arara'
+name = 'lainiovouma_1952_eu03'
 marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-num_people = 8
+num_people = 5
 print("num_people:", num_people)
 G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
