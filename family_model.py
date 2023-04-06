@@ -181,7 +181,7 @@ def get_probabilities(data, bandwidth=1, is_child=False):
         #     minimum distance seen in the dataset)
         # domain = np.arange(2, max(data)+1000, 1)
         domain = np.arange(min(data)-1, max(data)+1000, 1)  # ??? shouldn't I go from 0 to inf or from 2 to inf all the time?
-
+    # print("data:", data)
     kde = gaussian_kde(data, bw_method=bandwidth)
     # probs = {x:kde2.integrate_box_1d(-np.inf, x) for x in domain}  # CDF, discretized
     probs = {x:kde.integrate_box_1d(x-0.5, x+0.5) for x in domain}
@@ -243,6 +243,8 @@ def kolton_add_marriage_edges(people, finite_marriage_probs, prob_marry_immigran
     # number of non-connected people to add
     num_immigrants = round(prob_marry_immigrant * len(people))  # m
     # marry off the immigrants at random to nodes in the current generation
+    # print("people:", people)
+    # print("num_immigrants:", num_immigrants)
     marry_strangers = np.random.choice(people, size=num_immigrants, replace=False)
     unions = {(spouse, immigrant) for spouse, immigrant
                                     in zip(marry_strangers,
@@ -275,6 +277,8 @@ def kolton_add_marriage_edges(people, finite_marriage_probs, prob_marry_immigran
         dis_probs = dis_probs / np.sum(dis_probs)  # normalize
 
         # choose couple based on relative probability of distances
+        print("dis_probs:", dis_probs)
+        print("possible_couples:", possible_couples)
         couple_index = np.random.choice(np.arange(len(possible_couples)), p=dis_probs)
         couple = possible_couples_array[couple_index]
         unions.add(tuple(couple))
@@ -491,6 +495,7 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
     # num_single = num_people - num_finite_dist - num_inf_dist
     marriage_dist_array = np.array(marriage_dist)
     finite_only_marriage_dist = marriage_dist_array[marriage_dist_array != -1]
+    # print("finite_only_marriage_dist:", finite_only_marriage_dist)
     d = np.triu(np.random.choice(finite_only_marriage_dist, size=(num_people, num_people)), k=1)
     D = d + d.T
     indices = {node:k for k, node in enumerate(range(num_people))}
@@ -595,7 +600,7 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         generation_of_people = list(indices.keys())
         stats.append(len(generation_of_people))
         summary_statistics.append(stats)
-
+        print("generation", i)
         i += 1
      
         # ??? save output at each generation
@@ -765,8 +770,9 @@ import time
 st = time.time()
 
 # create a file to print output
-name = 'kel_owey'
+name = 'arawete'
 marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
+print("a")
 num_people = find_start_size(name=name)[-1]
 print("num_people:", num_people)
 G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
@@ -776,8 +782,8 @@ et = time.time()
 elapsed_time = et - st
 print('Execution time:', elapsed_time, 'seconds')
 #%%
-name = 'lainiovouma_1952_eu03'
+name = 'ayd_nl_yoruk_2005'
 marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-num_people = 5
+num_people = 10
 print("num_people:", num_people)
 G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, when_to_stop=size_goal)
