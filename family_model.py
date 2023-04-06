@@ -176,7 +176,7 @@ def get_probabilities(data, bandwidth=1, is_child=False):
     data = np.array(data)
     data = data[data > -1]  # only use the non-infinite distances
     if is_child:  # IE is child
-        domain = np.arange(0, max(data)+1000, 1)
+        domain = np.arange(0, max(data), 1)
     else:
         # ??? I feel like marriage distances should always have all distances
         #     possible, even the gross ones (IE we need to count from 2 not the
