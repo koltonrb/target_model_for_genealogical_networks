@@ -11,7 +11,7 @@ import os
 import shlex
 import regex as re
 import glob
-import pickle 
+import pickle
 from family_model import get_graph_stats
 #%%
 
@@ -163,7 +163,7 @@ def get_names(path = './Original_Sources', save_paths=True):
             name_list[i] = path + '/' + name_list[i]
         else:
             name_list[i] = name_pattern.findall(name_list[i])[0]
-    return name_list 
+    return name_list
 #%%
 
 
@@ -174,7 +174,7 @@ def get_graphs_and_names(path = 'Original_Sources', directed=False, sort=False):
     # for i in range(n):
     #     name_list[i] = path + '/' + name_list[i]
     name_list = glob.glob(os.path.join(path, '*.paj'))  # searches directory at path for pajek files
-    name_list += glob.glob(os.path.join(path, '**', '*.paj'))  # searches its subdirs for pajek files 
+    name_list += glob.glob(os.path.join(path, '**', '*.paj'))  # searches its subdirs for pajek files
     # get graphs and names
     graph_list = []
     graph_names = []
@@ -247,7 +247,7 @@ def get_marriage_distances_kolton(G, marriage_edges, name='', plot=True, save=Tr
             dist += 1
             paternal_gen = set([parent[0] for ancestor in paternal_gen for parent in G.in_edges(ancestor)])
             maternal_gen = set([parent[0] for ancestor in maternal_gen for parent in G.in_edges(ancestor)])
-            paternal_distances = paternal_distances | {ancestor: dist for ancestor in paternal_gen if ancestor not in paternal_distances}  # if clause prevents overwriting distances if we encounter the same ancestor at multiple distances 
+            paternal_distances = paternal_distances | {ancestor: dist for ancestor in paternal_gen if ancestor not in paternal_distances}  # if clause prevents overwriting distances if we encounter the same ancestor at multiple distances
             maternal_distances = maternal_distances | {ancestor: dist for ancestor in maternal_gen if ancestor not in maternal_distances}
             paternal_tree = paternal_tree.union(paternal_gen)
             maternal_tree = maternal_tree.union(maternal_gen)
@@ -359,7 +359,7 @@ def find_children(g_num, graph_names):
 def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_number_path='./ChildrenNumber/', plot=False):
     if not os.path.exists(distance_path):
         os.makedirs(distance_path)
-        
+
     graphs, graph_names = get_graphs_and_names(directed=True)
     name_pattern = re.compile("(?<=-).*(?=-)")
 
@@ -403,8 +403,8 @@ def save_marriage_distance_txt_files(distance_path='./Kolton_distances/', child_
 
 
 #%%
-path_to_paj = './output/arara_4/model-arara-oregraph.paj'
-name = 'arara_1'
+# path_to_paj = './output/arara_4/model-arara-oregraph.paj'
+# name = 'arara_1'
 
 # path_to_paj = graph_names[11]
 def find_model_marriage_child_distributions_from_paj(path_to_paj, plot=False, save=False):
@@ -415,27 +415,25 @@ def find_model_marriage_child_distributions_from_paj(path_to_paj, plot=False, sa
     vertex_names, marriage_edges, child_edges = separate_parts(path_to_paj,'A')
     # marraige info
     distances, num_inf_marriages, percent_inf_marraiges = get_marriage_distances_kolton(G, marriage_edges, name='', plot=plot, save=save)
-    # child info 
-    children_per_couple = find_children(0, [path_to_paj])  # hate that formatting, but I think that it will work 
-    
-    return distances, num_inf_marriages, percent_inf_marraiges, children_per_couple 
+    # child info
+    children_per_couple = find_children(0, [path_to_paj])  # hate that formatting, but I think that it will work
 
-#%% 
+    return distances, num_inf_marriages, percent_inf_marraiges, children_per_couple
+
+#%%
 def compile_historgrams_of_target_model_and_paj_distributions(path_to_model, name):
     # calculate distances/children per couple from the pajek file
-    # NOTE: this uses ONLY the ACTUAL network structure and ignores the artificially-imposed distances from our model's initial generation setup 
+    # NOTE: this uses ONLY the ACTUAL network structure and ignores the artificially-imposed distances from our model's initial generation setup
     paj_distances, paj_num_inf_marriages, paj_percent_inf_marriages, paj_children_per_couple = find_model_marriage_child_distributions_from_paj(os.path.join(path_to_model, 'model-'+name+'oregraph.paj'))
-    
-    # load the distances, children per couple that were saved during construction 
-    # NOTE: these distances are calculated acounting for the artificially-imposed distances from our model's intial generation setup 
-    #       (IE those distances which are imposed in our initial generation's distance matrix D, but for which there is not a corresponding 
+
+    # load the distances, children per couple that were saved during construction
+    # NOTE: these distances are calculated acounting for the artificially-imposed distances from our model's intial generation setup
+    #       (IE those distances which are imposed in our initial generation's distance matrix D, but for which there is not a corresponding
     #        structure in the actual graph object)
-    with open(os.path.join(path_to_model, name+'_marriage_distances.pkl'), 'rb') as infile: 
+    with open(os.path.join(path_to_model, name+'_marriage_distances.pkl'), 'rb') as infile:
         artificial_distances =  pickle.load(infile)
     with open(os.path.join(path_to_model, name+'_children_per_couple.pkl'), 'rb') as infile:
-        artificial_children_per_couple = pickle.load(infile) 
-    
-    # load the target data 
+        artificial_children_per_couple = pickle.load(infile)
+
+    # load the target data
     target_distances, target_num_marriages, target_prob_inf_marriage, target_prob_finite_marriage, target_child_dist, target_size_goal = get_graph_stats(name)
-    
-    
