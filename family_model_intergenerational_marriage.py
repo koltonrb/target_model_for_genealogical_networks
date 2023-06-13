@@ -1,21 +1,23 @@
+"""
+This version of the Target Model includes auxiliary ancestry connecting every
+possible pair of vertices in the intitial generation.  This version is explained
+in Chapter 4 of Kolton's thesis.
+
+The main guts of the model are in the human_family_network() method.  There is
+an example of how to run the model commented out below human_family_network()
+
+This version of human_family_network() returns the full Target Model network AND
+a version of the network which omits the auxiliary ancestry post network growth
+(see Section 6.2 of Kolton's thesis).
+"""
+
 import networkx as nx
-#import random
-#import functools
-#import operator
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import ast
-#from scipy import stats
-
-from scipy.stats import gaussian_kde
-#from sklearn.neighbors import KernelDensity as KDE
-#from scipy import interpolate
-
 import itertools
 import pickle
-#from time import time
-#from functools import wraps
 import os
 import regex as re
 from write_model_to_pajek_ore_graph import format_as_pajek
@@ -135,8 +137,12 @@ def get_graph_stats(name, distance_path='./Kolton_distances/', child_number_path
 
 
 #%%
-def get_probabilities(data, bandwidth=1, is_child=False, eps=1e-7):
+
+
+def get_child_probabilities(data):
+
     """
+    NO KDE
     given a list (either of distances to marriage for a marriage distribution or
     numbers of children for a children distribution), get_probabilities() produces
     a dictionary of probabilities. NOTE: the resulting "probabilities" should
@@ -156,187 +162,177 @@ def get_probabilities(data, bandwidth=1, is_child=False, eps=1e-7):
         probs (dictionary): keys are the entries of data and successive values,
             too (we lengthen the right tail of the distribution).
     """
-    # # ??? should this data list NOT contain the infinite entries?
-    # #     currently includes infinite entries (under key 999)
-    # #     would it be better to have infinity represented as a distance of 0?
-    # data = np.array(data)
-    # data = data[data > -1]  # only use the non-infinite distances
-    # kde = to_KDE(data, bandwidth)
-    # domain = np.arange(min(data)-1, max(data)+1000, 1)  # ??? shouldn't I go from 0 to inf or from 2 to inf all the time?
-    # domain = domain[:, np.newaxis]
-    # logs = kde.score_samples(domain)
-    # y = np.exp(logs)
-    #
-    # # fit spline (IE fit equation to density curve to then be able to integrate)
-    # spl = interpolate.InterpolatedUnivariateSpline(domain, y)
-    #
-    # # create a dictionary of probabilities by integrating the density curve
-    # probs = {i:spl.integral(i-0.5, i+0.5) for i in range(min(data), max(data)+1000)}
-    # return probs
-    data = np.array(data)
-    data = data[data > -1]  # only use the non-infinite distances
-    if is_child:  # IE is child
-        domain = np.arange(0, max(data), 1)
-    else:
-        # ??? I feel like marriage distances should always have all distances
-        #     possible, even the gross ones (IE we need to count from 2 not the
-        #     minimum distance seen in the dataset)
-        # domain = np.arange(2, max(data)+1000, 1)
-        domain = np.arange(min(data), max(data)+1000, 1)  # ??? shouldn't I go from 0 to inf or from 2 to inf all the time?
 
-    kde = gaussian_kde(data, bw_method=bandwidth)
-    # probs = {x:kde2.integrate_box_1d(-np.inf, x) for x in domain}  # CDF, discretized
-    probs = {x:kde.integrate_box_1d(x-0.5, x+0.5) for x in domain}
-    
-    if not is_child:
-        eps = min([k for k in probs.values() if k != 0]) / 2
-        probs = {key:val + eps for key, val in probs.items()}
+    data = np.array(data)
+
+
+    data = data[data > -1]  # only use non-negative number of children per household
+    domain = np.arange(0, max(data) + 1, 1)
+
+    probs = {x: sum(data==x)/len(data) for x in domain}
+    # return only those keys with non zero values
+    probs = {key:val for key, val in probs.items() if val != 0}
     return probs
 
+
+##%
+# data = marriage_dist
+
+def get_marriage_probabilities(data, num_people, eps=1e-7):
+
+    """
+    NO KDE
+    given a list (either of distances to marriage for a marriage distribution or
+    numbers of children for a children distribution), get_probabilities() produces
+    a dictionary of probabilities. NOTE: the resulting "probabilities" should
+    not be expected to sum to 1.  If a true probability distribution is desired
+    then you should normalize the resulting distribution.  The resulting
+    dictionary has entries beyond the data supplied (for example if a supplied
+    marriage distribution has a maximum distance of 14 the resulting dictionary
+    has entries for distances greater than 14 to allow us to use the
+    datastructure without key errors should a larger number be drawn; we add
+    1000 entries beyond the maximum.  If ever more than 1000 generations are to
+    be run in the model, then this function should be modified).
+    PARAMETERS:
+        data (list): data taken from an actual family network
+        bandwidth (int):  used as an argument in to_KDE(), the std deviation of
+            each kernel in the sum (see documentation)
+    RETURNS:
+        probs (dictionary): keys are the entries of data and successive values,
+            too (we lengthen the right tail of the distribution).
+    """
+    data = np.array(data)
+
+    frac_inf_marriage = sum(data ==  -1) / len(data)  # as a proportion of marriage edges
+    prob_inf_marriage = len(data) * 2 / num_people * frac_inf_marriage
+
+    domain = np.arange(2, max(data) + 1, 1)
+    # frac_finite_marriage = sum(data != -1) / len(data)
+    finite_probs = {x: len(data) * 2 / num_people * sum(data==x)/len(data) for x in domain}
+    prob_finite_marriage = sum(finite_probs.values())  # normalize finite probs, then scale to sum to prob_finite_marriage
+    # note that we shift the entire distribution up by epsilon, added uniformly everywhere
+    # finite_probs = {key: val / denom * prob_finite_marriage + eps for key, val in finite_probs.items()}
+    finite_probs = {key: val + eps for key, val in finite_probs.items()}
+
+    prob_single = 1 - prob_inf_marriage - prob_finite_marriage
+
+    probs = {}
+    probs[-1] = prob_inf_marriage + eps
+    probs[0] = prob_single + eps
+
+    probs = probs | finite_probs
+
+    # return only those keys with non zero values
+    probs = {key:val for key, val in probs.items() if val != 0}
+    # prevents divide by zero errors when defining dis_probs in add_marriage_edges()
+    # eps = min([k for k in probs.values() if k != 0]) / 2
+    # probs = {key:val + eps for key, val in probs.items()}
+
+    return probs
 #%%
 
-def get_difference_in_probabilities(target_probs, current, eps=1e-6):
+def get_difference_in_probabilities(target_probs, current, num_people, name, gen_num, outpath, eps=1e-7, plot=False):
     """
-    This method accepts both the target marriage distribution AND the 
-    current-state model marriage distribution.  It will subtract the 
-    current-state from the target probabilites, flooring at some positive 
-    epsilon.  The returned probabiltiy distribution will then favor any 
-    marriages of those distances which have not yet been drawn in proportion 
+    This method accepts both the target marriage distribution AND the
+    current-state model marriage distribution.  It will subtract the
+    current-state from the target probabilites, flooring at some positive
+    epsilon.  The returned probabiltiy distribution will then favor any
+    marriages of those distances which have not yet been drawn in proportion
     with the target distribution's frequency for that distance
-    
+
     PARAMETERS:
-        target_probs (dictionary): keys are marriage distances, values are 
-            probabilities.  This is the result of 
-            get_probabilities(marriage_dist) (called finite_marriage_probs 
-            below). This should already be normalized.  
+        target_probs (dictionary): keys are marriage distances, values are
+            probabilities.  This is the result of
+            get_probabilities(marriage_dist) (called finite_marriage_probs
+            below). This should already be normalized.
         current (list): list of marriage distances currently represented in the
-            graph.  
+            graph.
     """
-    current_probs= get_probabilities(current)
-    current_probs = {key:value/sum(current_probs.values()) for key, value in zip(current_probs.keys(), current_probs.values())} # normalize 
+    current_probs= get_marriage_probabilities(current, num_people, eps=eps)
+    current_probs = {key:value/sum(current_probs.values()) for key, value in zip(current_probs.keys(), current_probs.values())} # normalize
     # need every key that occurs in target to also occur in current_probs
     current_probs = current_probs | {key : 0 for key in target_probs if key not in current_probs}
-    
+
     adjusted_probs = {key: target_probs[key] - current_probs[key] if target_probs[key] - current_probs[key] >= 0  else eps for key in target_probs.keys()}
-    
-    # normalize 
-    adjusted_probs = {key:value/sum(adjusted_probs.values()) for key, value in zip(adjusted_probs.keys(), adjusted_probs.values())} # normalize 
-    
-    return adjusted_probs 
-    
-    
-# TODO: it would be better to make this accept marriage_probs as an argument rather than
-#       using marraige_probs as a global argument, right?
-# TODO: need to make it so that the model runs, saves, and exits with an error message if people should ever be an empty list
-# people=generation_of_people
-# prev_people=prev_generation_still_single
-# prob_marry_immigrant = prob_inf_marriage
-# prob_marry = prob_finite_marriage
+
+    # normalize
+    adjusted_probs = {key:value/sum(adjusted_probs.values()) for key, value in zip(adjusted_probs.keys(), adjusted_probs.values()) if value != 0} # normalize
+
+    adjusted_probs = adjusted_probs | {key:0 for key in target_probs if key not in adjusted_probs}
+
+    if plot:
+        graph_current_distributions(target_probs, current_probs, adjusted_probs, gen_num, name, outpath, eps=eps)
+    return adjusted_probs
+
 
 #%%
-# target_prob_inf = prob_inf_marriage
-# target_prob_finite = prob_finite_marriage 
-# current_marriage_dist_list = all_marriage_distances  
-# current_total_num_single = total_num_single 
-#%%
-def get_difference_in_types_of_marriage(target_prob_inf, target_prob_finite, current_marriage_dist_list, verbose=False):
-    """
-    This function does not adjust the total probability of marriage 
-    (prob_finite + prob_inf remains the same).  It does adjust the mixture of 
-    inf and finite probabilities.
-    
-    PARAMETERS:
-        target_prob_inf (float): probability that a NODE in the target network 
-            takes part in an infinite-distance marriage. NOTE: should be
-            prob_inf_marriage as returned by get_graph_stats() so that 
-            target_prob_inf + target_prob_finite = 1.0 - target_prob_single
-        target_prob_finite (float): probability that a NODE in the target 
-            network takes part in an infinite-distance marriage. NOTE: should 
-            be prob_finite_marriage as returned by get_graph_stats() so that 
-            target_prob_inf + target_prob_finite = 1.0 - target_prob_single
-        current_marriage_dist_list (list of int): list of all distances of all 
-            marriages currently in the modeled graph G.  Must follow the 
-            convention employed throughout that a recorded distance of -1 
-            indicates an infinite-distance marriage (partners share no common 
-            ancestor). 
-            
-    RETURNS:
-        new_prob_inf (float): the sum of target_prob_inf and the difference 
-            between the probability of an infinite distance marriage in the 
-            target graph and the proportion of infinite distance marriages in 
-            the current state model graph (scaled by the target graph's 
-            probability of marriage) 
-        new_prob_finite (float): the sum of target_prob_finte and the 
-            difference between teh probability of a finite distance marriage in 
-            the target graph and the proportion of finite distance marriages in 
-            the current state model graph (scaled by the target graph's 
-            probability of marriage)
-    """
-    
-    target_prob_marry = target_prob_inf + target_prob_finite  # complement of this is target_prob_single
-    
-    current_marriage_dist_list = np.array(current_marriage_dist_list)
-    current_proportion_inf = sum(current_marriage_dist_list == -1) / len(current_marriage_dist_list)  # percentage of marriages, not percentage of people at inf distance
-    current_proportion_finite = sum(current_marriage_dist_list != -1) / len(current_marriage_dist_list)
-    
-    current_prob_inf    = target_prob_marry * current_proportion_inf  # scale by proportion of target population that marries
-    current_prob_finite = target_prob_marry * current_proportion_finite 
-    
-    # diff_inf = -1 * diff_finite
-    diff_inf = target_prob_inf - current_prob_inf 
-    diff_finite = target_prob_finite - current_prob_finite
-    
-    new_prob_inf = max(target_prob_inf + diff_inf, 0)
-    new_prob_finite = max(target_prob_finite + diff_finite, 0) 
-    
-    if new_prob_inf == 0:
-        new_prob_finite = target_prob_marry 
-    if new_prob_finite == 0:
-        new_prob_inf = target_prob_marry
-    if verbose:
-        if new_prob_inf < 0 or new_prob_finite < 0:
-            print('current_proportion_inf', current_proportion_inf)
-            print(' current_proportion_finite', current_proportion_finite)
-            print('current_prob_inf', current_prob_inf)
-            print(' current_prob_finite', current_prob_finite)
-            print('diff_inf', diff_inf)
-            print('diff_finite', diff_finite)
-            print('new_prob_inf', new_prob_inf)
-            print(' new_prob_finite', new_prob_finite)
-    return new_prob_inf, new_prob_finite
 
-    # # this will find prob marry in a way that will sum to one with prob single
-    # current_prob_marry = len(current_marriage_dist_list) * 2 / (len(current_marriage_dist_list) * 2 + current_total_num_single)
-    # current_marriage_dist_list = np.array(current_marriage_dist_list)
-    # current_prob_inf = sum(current_marriage_dist_list == -1) / len(current_marriage_dist_list) * current_prob_marry       # x/100 * marry% = new fraction of marriages that are inf dist
-    # current_prob_finite = sum(current_marriage_dist_list != -1) /  len(current_marriage_dist_list)  * current_prob_marry  # makes it so prob_inf + prob_finite + prob_single = 1
-    # target_proportion_inf    = target_prob_inf    / target_prob_marry 
-    # target_proportion_finite = target_prob_finite / target_prob_marry 
-    
-    # # if current_prob_inf_marriage > target_prob_inf: 
-    # #     # too many inf marriages in model
-    # #     new_prob_inf = min(current_prob_inf - target_prob_inf, target_prob_inf/2)
-    # #     new_prob_finite = target_prob_finite + (target_prob_inf - new_prob_inf)
-    # # else:
-    # #     # not enough inf marriages in model
-    # #     # so current_prob_finte > target_prob_finite
-    # #     new_prob_finite = target_prob_finite - current_prob_finite
-    # #     new_prob_inf = current_prob_inf + (target_prob_)
-    
-    
-    # return max(0, target_prob)
-    
+
+def graph_current_distributions(target_marriage_probs, model_marriage_probs, adjusted_marriage_probs, gen_num, name, outpath, save_plots=True, alpha=0.85, eps=1e-7):
+    # find max bin (with non-zero occurance)
+    model_vals = np.array(list(model_marriage_probs.values()))
+    target_vals = np.array(list(target_marriage_probs.values()))
+    adjusted_vals = np.array(list(adjusted_marriage_probs.values()))
+
+    target_vals = target_vals[target_vals != 0]
+    model_vals = model_vals[model_vals != 0]
+    adjusted_vals = adjusted_vals[adjusted_vals != 0]
+
+    # eps = max(min(target_vals), min(model_vals), min(adjusted_vals))
+    target_eps = np.min(target_vals)
+    model_eps = np.min(model_vals)
+    adjusted_eps = np.min(adjusted_vals)
+
+    if eps != 0:
+        target_distances = [k for k in target_marriage_probs.keys() if target_marriage_probs[k] > target_eps]
+        model_distances = [k for k in model_marriage_probs.keys() if model_marriage_probs[k] > model_eps ]
+        adjusted_distances = [k for k in adjusted_marriage_probs.keys() if adjusted_marriage_probs[k] > adjusted_eps]
+    else:
+        target_distances = [k for k in target_marriage_probs.keys() if target_marriage_probs[k] >= target_eps]
+        model_distances = [k for k in model_marriage_probs.keys() if model_marriage_probs[k] >= model_eps ]
+        adjusted_distances = [k for k in adjusted_marriage_probs.keys() if adjusted_marriage_probs[k] >= adjusted_eps]
+
+
+    max_bin = int(max(model_distances + target_distances + adjusted_distances))
+
+    fig = plt.figure(figsize=(12,9), dpi=300)
+    # uncomment these lines if you want the inf distance marriage bar (at -1) to show
+    #plt.hist(target_marriage_dist, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='target')
+    #plt.hist(model_marriage_distances, bins=[k for k in range(-1, max_bin + 2)], range=(-2, max_bin+2), alpha=0.65, label='model')
+    # uncomment these two lines if you want to only show finite-distance marriage distributions
+    width = 0.3
+    plt.bar([k for k in target_marriage_probs.keys() if k <= max_bin], [target_marriage_probs[k] for k in target_marriage_probs.keys() if k <= max_bin], alpha=alpha, label=r'target $P_U(x)$', width=width, align='edge')
+    plt.bar([k + width for k in model_marriage_probs.keys() if k <= max_bin], [model_marriage_probs[k] for k in model_marriage_probs.keys() if k <= max_bin], alpha=alpha, label=rf'target model $P_U^{gen_num - 1}(x)$', width=width, align='edge')
+    plt.bar([k + 2 * width for k in adjusted_marriage_probs.keys() if k <= max_bin], [adjusted_marriage_probs[k] for k in adjusted_marriage_probs.keys() if k <= max_bin], alpha=alpha, label=rf'adjusted $P_U^{gen_num}(x)$', width=width, align='edge')
+
+    plt.legend()
+    # title = name + '\n'
+    title = f'generation: {gen_num} \n'
+    ticks = [x for x in range(-1, max_bin + 1)]
+    marks = [r'$\infty$'] + ticks[1:]
+    plt.xticks(ticks, labels=marks)
+    plt.title(title, fontsize=12, pad=2)
+    if not save_plots:
+        plt.show()
+    else:
+        plt.savefig(os.path.join(outpath,  name + f'distributions_generation_{gen_num}' + '.png'), format='png')
+    plt.clf()  # clear out the current figure
+    plt.close(fig)
 
 #%%
 # people = generation_of_people
 # prev_people = prev_generation_still_single
-# finite_marriage_probs = new_finite_marriage_probs
-# prob_marry_immigrant = prob_inf_marriage
-# prob_marry = prob_finite_marriage
+# marriage_probs = new_marriage_probs
+# prob_marry_immigrant = new_prob_inf_marriage
+# prob_marry = new_prob_finite_marriage
+# original_marriage_dist = marriage_dist
+
 #%%
-def kolton_add_marriage_edges(people, prev_people, num_people, finite_marriage_probs, prob_marry_immigrant, prob_marry, D, indices, tol=0):
+def add_marriage_edges(people, prev_people, num_people, marriage_probs, prob_marry_immigrant, prob_marry, D, indices, original_marriage_dist, tol=0, eps=1e-7):
     """
     Forms both infinite and finite distance marriages in the current generation
+
+    INVERTED: FORMS FINITE MARRAIGES FIRST
     PARAMETERS:
         people:  (list) of the current generation (IE those people elligible for
                 marriage)
@@ -355,7 +351,7 @@ def kolton_add_marriage_edges(people, prev_people, num_people, finite_marriage_p
         prob_marry: (float) the probability that a given node will marry another
                 node in people
         D: ((len(people) x len(people)) numpy array) indexed array of distance
-            between nodes in people (siblings are distance 2)
+            between nodes in  people (siblings are distance 2)
         indices: (dictionary) maps node name (int) to index number in D (int)
     RETURNS:
         unions: (list of tuples of int) marriages formed.  Entries are of two
@@ -376,7 +372,18 @@ def kolton_add_marriage_edges(people, prev_people, num_people, finite_marriage_p
         wont_marry: (list) of nodes in people who did not marry, will attempt
             to marry someone from the next generation
     """
+    finite_marriage_probs = {key: val for key, val in marriage_probs.items() if key > 0}
+    if sum(finite_marriage_probs.values()) > 0:
+        finite_marriage_probs = {key:val /sum(finite_marriage_probs.values()) for key, val in finite_marriage_probs.items()}
+    desired_finite_distances = [distance for distance,prob in finite_marriage_probs.items() if prob > 0]
+    # if len(desired_finite_distances) == 0:
+    #     print("NO DESIRED FINITE DISTANCES")
+    #     print('finite_marriage_probs', finite_marriage_probs)
+
+    minimum_permissible_distance = min([k for k in original_marriage_dist if k > -1])
+
     marriage_distances = []
+    unions = set()
 
     people_set = set(people)  # for fast removal later
     # find the next 'name' to add to your set of people
@@ -384,27 +391,16 @@ def kolton_add_marriage_edges(people, prev_people, num_people, finite_marriage_p
     # number of non-connected people to add
     num_immigrants = round(prob_marry_immigrant * len(people))  # m
     num_couples_to_marry = round(prob_marry * len(people) / 2)
-    # marry off the immigrants at random to nodes in the current generation
-    immigrants = [k for k in range(next_person, next_person + num_immigrants)]
-    marry_strangers = np.random.choice(people, size=num_immigrants, replace=False)
-    unions = {(spouse, immigrant) for spouse, immigrant
-                                    in zip(marry_strangers,
-                                           immigrants)}
-    # remove the married people from the pool #2ndManifesto
-    people_set = people_set - set(marry_strangers)
-    # and record the (infinite) distances of each marriage
-    marriage_distances += [-1 for k in range(num_immigrants)]
+    # num_immigrants = np.random.binomial(len(people_set), prob_marry_immigrant)
+    # num_couples_to_marry = np.random.binomial(len(people_set) // 2, prob_marry)
 
-    # now that you've married off some fraction of the generation to new nodes (ie to immigrants)
     # divide the current generation into two camps, those who will marry among this and the previous generation
     # AND those who will marry next generation
     will_marry = set(np.random.choice(list(people_set), size=len(people_set)//2, replace=False))
     wont_marry_until_next_time = [node for node in people_set if node not in will_marry]  # won't attempt to form marriages until next generation
     # add in singles from the previous generation
     people_set = will_marry | set(prev_people)
-    # get number of people to marry
-    # num_couples_to_marry = round(len(people_set)*prob_marry/2)  # this line grabs a fraction of those who either stay single or marry at a finite difference but it doesn't account that part of that gen already married strangers
-    # # num_couples_to_marry = round((len(people_set) + len(marry_strangers)) * prob_marry / 2)
+
     # get all possible pairs of the still single nodes
     # rejecting possible parrings which have a common ancestor more recently
     # than allowed by finite_marriage_probs (IE this is where we account that siblings
@@ -416,30 +412,65 @@ def kolton_add_marriage_edges(people, prev_people, num_people, finite_marriage_p
     # but not pairings where boths spouses are in the previous generation
     possible_couples = set(possible_couples) - set(last_gen_couples)
 
+    # possible_couples = {(man, woman): D[indices[man]][indices[woman]]
+    #                     for man, woman in itertools.combinations(people_set, 2)
+    #                     if D[indices[man]][indices[woman]] >= min(finite_marriage_probs)}
     possible_couples = {(man, woman): D[indices[man]][indices[woman]]
-                        for man, woman in itertools.combinations(people_set, 2)
-                        if D[indices[man]][indices[woman]] >= min(finite_marriage_probs)}
+                        for man, woman in possible_couples
+                        if D[indices[man]][indices[woman]] >= minimum_permissible_distance}
+
+    preferred_couples = {couple:distance for couple, distance in possible_couples.items() if (distance in set(original_marriage_dist) and distance in desired_finite_distances)}
+    other_couples = {couple:distance for couple, distance in possible_couples.items() if couple not in preferred_couples}
+
+    # print("num preferred couples", len([pc for pc in possible_couples if possible_couples[pc] in set(marriage_dist)]))
     iter = 0
-    print("len possible couples: ", len(possible_couples))
+
     while possible_couples and iter < num_couples_to_marry:
         # find the probabilities of all possible distances
         # must update after each marriage
         # change to a data structure suited to random draws:
-        # FIXME will this preserve ordering between keys and values?
-        
-        print('possible_couples', possible_couples)
-        possible_couples_array = np.array(list(possible_couples.keys()))
-        print('possible couples_array', possible_couples_array)
-        dis_probs = np.array([finite_marriage_probs[d] for d in possible_couples.values()])
-        print('dis_probs 1', dis_probs)
-        dis_probs[np.abs(dis_probs) < tol] = 0  # prevent "negative zeros"
-        print('dis_probs 2', dis_probs)
-        dis_probs = dis_probs / np.sum(dis_probs)  # normalize
-    
-        print('dis_probs 3', dis_probs)
-        # choose couple based on relative probability of distances
-        couple_index = np.random.choice(np.arange(len(possible_couples)), p=dis_probs)
-        couple = possible_couples_array[couple_index]
+
+        if preferred_couples:
+
+            possible_couples_array = np.array(list(preferred_couples.keys()))
+
+            # dis_probs = np.array([finite_marriage_probs[d] for d in possible_couples.values()])
+
+            dis_probs = np.array([finite_marriage_probs[d] if d in finite_marriage_probs else eps for d in preferred_couples.values()])
+            temp1 = dis_probs.copy()
+            dis_probs[np.abs(dis_probs) < tol] = 0  # prevent "negative zeros"
+            temp2 = dis_probs.copy()
+            dis_probs = dis_probs / np.sum(dis_probs)  # normalize
+
+            # choose couple based on relative probability of distances
+            try:
+                couple_index = np.random.choice(np.arange(len(preferred_couples)), p=dis_probs)
+            except:
+                print('marriage_probs', marriage_probs)
+                print('desired distances', desired_finite_distances)
+                print('finite_marriage_probs', finite_marriage_probs)
+                print('preferred_couples', preferred_couples)
+                print('temp1', temp1)
+                print('temp2', temp2)
+                print('dis_probs', dis_probs)
+            couple = possible_couples_array[couple_index]
+        else:
+            # print('len(preferred_couples): ', len(preferred_couples))
+            # choose randomly from our candidate distances which are next closest
+            # to our original distribution's support
+            possible_couples_array = np.array(list(other_couples.keys()))
+
+            # find our least bad distance:
+            least_bad_distance = min([d for d in other_couples.values() if d >= minimum_permissible_distance])
+            # print('least_bad_distance: ', least_bad_distance, '\n')
+            dis_probs = np.array([1 if d == least_bad_distance else 0 for d in other_couples.values()])
+            dis_probs[np.abs(dis_probs) < tol] = 0  # prevent "negative zeros"
+            dis_probs = dis_probs / np.sum(dis_probs)  # normalize   Should be equal where not zero
+
+            # choose couple based on relative probability of distances
+            couple_index = np.random.choice(np.arange(len(other_couples)), p=dis_probs)
+            couple = possible_couples_array[couple_index]
+
         unions.add(tuple(couple))
         # and save the distance of that couple
         marriage_distances += [int(D[indices[couple[0]], indices[couple[1]]])]
@@ -451,26 +482,44 @@ def kolton_add_marriage_edges(people, prev_people, num_people, finite_marriage_p
                                     and (pair[1] != couple[0])
                                     and (pair[0] != couple[1])
                                     and (pair[1] != couple[1]))}
+
+        preferred_couples = {couple:distance for couple, distance in possible_couples.items() if (distance in set(original_marriage_dist) and distance in desired_finite_distances)}
+        other_couples = {couple:distance for couple, distance in possible_couples.items() if couple not in preferred_couples}
+
         iter += 1
-        # test1 = [k for k in possible_couples if k[0] == couple[0]]
-        # test2 = [k for k in possible_couples if k[0] == couple[1]]
-        # test3 = [k for k in possible_couples if k[1] == couple[0]]
-        # test4 = [k for k in possible_couples if k[1] == couple[1]]
-        # if test1 or test2 or test3 or test4:
-        #     print("missed some possibilities")
         stay_single_forever = set([node[0] for node in possible_couples] + [node[1] for node in possible_couples])
     if iter == 0:
         # IE you never entered the while loop above
-        stay_single_forever = {} 
+        stay_single_forever = will_marry | set(prev_people)
+
+
+    # marry off the immigrants at random to nodes in the current generation
+    num_immigrants = min(len(stay_single_forever), num_immigrants)
+
+    immigrants = [k for k in range(next_person, next_person + num_immigrants)]
+    marry_strangers = np.random.choice(list(stay_single_forever), size=num_immigrants, replace=False)
+    stay_single_forever -= set(marry_strangers)
+
+    unions = unions | {(spouse, immigrant) for spouse, immigrant in zip(marry_strangers, immigrants)}
+
+    # remove the married people from the pool #2ndManifesto
+    # people_set = people_set - set(marry_strangers)
+    # and record the (infinite) distances of each marriage
+    marriage_distances += [-1 for k in range(num_immigrants)]
+
+    # now that you've married off some fraction of the generation to new nodes (ie to immigrants)
+
     return unions, num_immigrants, marriage_distances, immigrants, wont_marry_until_next_time, len(stay_single_forever)
 
 
 #%%
-def add_children_edges_kolton(unions, num_people, child_probs):
+
+
+def add_children_edges(unions, num_people, child_probs):
     """
     PARAMETERS:
         unions: (list of tuple of int) marriages in the current generation
-            (output of kolton_add_marriage_edges())
+            (output of add_marriage_edges())
         num_people: (int) current total number of nodes (persons) in the graph
             (IE the sum of the size of every generation)
         child_probs: (dictionary) keys are number of children (int), values are
@@ -499,10 +548,6 @@ def add_children_edges_kolton(unions, num_people, child_probs):
 
     num_children_each_couple = np.random.choice(np.array(list(child_probs.keys())), p=np.array(list(child_probs.values())), size=len(unions))
     total_num_children = sum(num_children_each_couple)
-    # names = [num_people + child for child in range(total_num_children)]
-    # families = [[names[k]] for k in range(last + family ) for family in num_children_per_couple if
-    # families = [[num_people + child for child in range(family)] for family in num_children_per_couple]
-    # families = [[child for child in range(] for family in num_children_per_couple]
     biggest_name = num_people
 
     for union, num_children in zip(unions, num_children_each_couple):
@@ -522,18 +567,14 @@ def add_children_edges_kolton(unions, num_people, child_probs):
     return child_edges, families, num_people + total_num_children, num_children_each_couple
 
 
-# sum(get_probabilities(marriage_dist).values())
-# sum(get_probabilities(child_dist, is_child=True).values())
-# sum(get_probabilities(child_dist).values())
-# set(child_dist)
-
-
-
 #%%
 
 # n = num_people
 # people_retained = prev_generation_still_single
-def update_distances_kolton(D, n, unions, families, indices, people_retained):
+
+#%%
+
+def update_distances(D, n, unions, families, indices, people_retained):
     """
     Build a distance matrix that keeps track of how far away each node is from
     each other. Need to update distances after new nodes added to graph (i.e.,
@@ -542,12 +583,12 @@ def update_distances_kolton(D, n, unions, families, indices, people_retained):
         D (array): "old" matrix of distances, previous generation
             n (int): number of nodes currently in graph
         unions: (list of tuple of int) marriages in the current
-            generation (output of kolton_add_marriage_edges())
+            generation (output of add_marriage_edges())
         no_unions: (list of int) list of nodes in the current generation
             which did not marry
         families: (list of list of int) entries are lists of children
             pertaining to the ith couple (follows the order of unions)
-            (output of add_children_edges_kolton())
+            (output of add_children_edges())
         indices (dictionary): maps node name (an int) to index number
             (row/column number) in the current distance matrix D.
         people_retained (list): nodes which are unmarried, but which will attempt to
@@ -626,22 +667,27 @@ def update_distances_kolton(D, n, unions, families, indices, people_retained):
 
 
 #%%
-def check_indices(indices):
-    all_ok = True
-    min_child = min(indices.keys())
-    max_child = max(indices.keys())
-    for i in range(min_child, max_child-1,):
-        if indices[i]+1 != indices[i+1]:
-            all_ok = False
-            print([(k, indices[k]) for k in range(i-2, i+2)])
-    if all_ok:
-        print("indices ok")
+# def check_indices(indices):
+#     """
+#     warns if adding people to the graph ever skips a number
+#     """
+#     all_ok = True
+#     min_child = min(indices.keys())
+#     max_child = max(indices.keys())
+#     for i in range(min_child, max_child-1,):
+#         if indices[i]+1 != indices[i+1]:
+#             all_ok = False
+#             print([(k, indices[k]) for k in range(i-2, i+2)])
+#     if all_ok:
+#         print("indices ok")
 
 
 #%%
-# TODO: what do we actually want this to return?
-def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, children_dist, name, when_to_stop=np.inf, num_gens=np.inf, save=True, out_dir='output'):
+
+def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, children_dist, name, when_to_stop=np.inf, num_gens=np.inf, save=True, out_dir='output', eps=0):
     """
+    This method is the main driver for implementing Algorithm 4.6 in Kolton's
+    thesis.
     PARAMETERS:
         num_people (int): number of people (nodes) to include in initial
             generation
@@ -653,7 +699,9 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         prob_finite_marriage (float): probability of marriage being drawn from
             the finite portion of marriage_dist (herein defined and treated as
             finite_marriage_probs)
-        prob_inf_marriage (float): probability of marriage to a non-connected person
+        prob_inf_marriage (float): probability of marriage to a non-connected
+            person.
+            NOTE: prob_finite_marriage + prob_inf_marriage + prob_single = 1
         children_dist: (list of int) one entry per pair of parents, indicating
             how many child edges each parent in the couple share
         name: (str) name for prefix of saved files
@@ -664,15 +712,57 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
             initial generation.  Default is np.inf.  If np.inf, then the model
             will run until the number of nodes in the example network is
             surpassed and then stop.
-
+        save (bool): should you save pickled versions of networkx graphs, model
+            union edges, and distance to union and child distributions, as well
+            as png graphs of distance to union updates each generation as well
+            as an xlsx file summarizing model growth?
+        out_dir (str): destination directory for save output.  Each run will
+            create an out_dir/{name}_{int}/ file structure, counting version
+            number automatically
     RETURNS:
-        G:
-        D:
-        unions:
-        num_children_per_couple:
+        G (nx.DiGraph):  modeled network.  This includes auxiliary ancestry
+            (pre-generation 0 common ancestry).
+            Each node has the following attributes: 1) layer: either an int
+                indicating the vertice's generation or a str 'setup' indicating
+                that the vertex pertains to pre-initial generation auxillary
+                ancestry.
+            Each edge has the following attributes: 1) Relationship: str, either
+                "Marriage" to indicate a union edge or "Parent-Child".  Again,
+                Parent-Child edges go from parent to child.
+        G_reduced (nx.DiGraph): modeled network formatted as above, but
+            exlcuding the auxiliary ancestry pre-generation 0.  Specifically,
+            auxiliary ancestry is created, the modeled network grows adding
+            unions and children, then after the model stops or the network has
+            died out, the auxiliary ancestry is omitted.  G_reduced is a
+            subgraph of G.
+        all_marriage_edges (list of tuples of int): this lists all union-type
+            edges added to G (indicated by node attribtute
+            "Relationship"=="Marriage").  NOTE:  The auxiliary ancestry added
+            prior to generation 0 contains no union-type edges, so that G and
+            G_reduced share the same list of union edges.
+        all_marriage_distances (list of int): this lists all distances prior to
+            union for each union edge in all_marriage_edges (orders match).
+            NOTE: these distances are those as observed in G with auxiliary
+            ancestry prior to generation 0.  These distances ARE NOT THE
+            DISTANCES FOR UNIONS IN THE G_REDUCED GRAPH.
+        all_children_per_couple (list of int): this lists the number of children
+            per union edge in G and in G_reduced.  NOTE: because the auxiliary
+            ancestry contains no union edges, the parent-child relationships
+            encoded therein do not affect this distribution.  That is, G and
+            G_reduced have the exact same list of children per union.
+        dies_out (bool):  False indicates that the model exited successfully---
+            generations 0 to L (inclusive) contain more than when_to_stop nodes
+            in total OR L >= num_gens.  True else.
+        output_path (str): None if save==False, else out_dir/{name}_{int},
+            counting version number automatically.
     """
+    if save:
+        output_path = makeOutputDirectory(out_dir, name)
+    else:
+        output_path = ''
+
     num_original_people = num_people
-    total_num_single = 0 
+    total_num_single = 0
     dies_out = False
 
     all_marriage_edges = []
@@ -702,6 +792,8 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         nodes_to_add = [k for k in range(num_people+1, num_people+D[indices[pair[0]],
                                                                       indices[pair[1]]])]
         num_people += len(nodes_to_add)
+        # now add these nodes to the graph with the attributes
+        G.add_nodes_from(nodes_to_add, layer='setup')
         husband_line = nodes_to_add[:len(nodes_to_add)//2+1][::-1] + [pair[0]]   # path will go FROM first TO last node in list
         wife_line = nodes_to_add[len(nodes_to_add)//2:] + [pair[1]]  # path will go FROM first TO last node in list
 
@@ -712,28 +804,12 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
 
     # get probabilities of possible finite distances to use in marriage function
     # and normalize it
-    finite_marriage_probs = get_probabilities(marriage_dist)
-    finite_marriage_probs = {key:value/sum(finite_marriage_probs.values()) for key, value in zip(finite_marriage_probs.keys(), finite_marriage_probs.values())}
-    # now make the finite marriage entries sum to the probability of a finite marriage
-    # for if we decide to add prob inf marriage, prob single to the dictionary 
-    # finite_marriage_probs = {key:value*prob_finite_marriage for key, value in zip(finite_marriage_probs.keys(), finite_marriage_probs.values())}
-    
-    
-    
-    # now add an entry for infinite distance marriages
-    # ??? TODO should we add the infinite distance portion the way rebbekah did?
-    # marriage_probs[100] = (infdis/len(all_distances))/2  # include probability of infinite distance
-    # factor = 1.0/sum(marriage_probs.values())   # normalizing factor
-    # # normalize values for finite and infinite distances
-    # for k in marriage_probs:
-    #     marriage_probs[k] = marriage_probs[k]*factor
-    # marriage_probs = finite_marriage_probs.copy()
-    # marriage_probs[-1] = prob_inf_marriage
-    # and add an entry for staying single
-    # marriage_probs[0] = 1 - prob_finite_marriage - prob_inf_marriage
+    marriage_probs = get_marriage_probabilities(marriage_dist, when_to_stop, eps=eps)  # hand in the ORIGINAL MARRIAGE DISTRIBUTION
+    # maybe don't normalize so that you will (approximately) retain the prob_inf + prob_finite + prob_single = 1
+    marriage_probs = {key:value/sum(marriage_probs.values()) for key, value in zip(marriage_probs.keys(), marriage_probs.values())}
 
     # ditto for the child distribution
-    child_probs = get_probabilities(children_dist, is_child=True)
+    child_probs = get_child_probabilities(children_dist)
     # ??? make probabilities non-negative (some entries are effectively zero, but negative)
     child_probs = {key:value if value > 0 else 0 for key, value in zip(child_probs.keys(), child_probs.values()) }
     child_probs = {key:value/sum(child_probs.values()) for key, value in zip(child_probs.keys(), child_probs.values())}
@@ -743,45 +819,44 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
     # in generation 0) as when_to_stop
     num_setup_people = num_people - num_original_people
 
-
-
     prev_generation_still_single = []
-    current_prob_inf = np.inf 
-    
+    current_prob_inf = np.inf
 
     summary_statistics = []  # will hold ordered tuples of integers (# total people in graph,  # immigrants, # num_children, # num marriages, prob_inf_marriage, prob_finite_marriage, prob_inf_marriage(eligible_only), prob_finite_marriage(elegible_only))
     i = 1
+
     while (num_people - num_setup_people < when_to_stop) & (i < num_gens):
         # check_indices(indices)
 
-        # for i in range(num_gens):
         # create unions between nodes to create next generation
         #unions, no_unions, all_unions, n, m, infdis, indices = add_marriage_edges(all_fam, all_unions, D, marriage_probs, p, ncp, n, infdis, indices)
         if len(generation_of_people) == 0:
             dies_out = True
             break
-    
+
         # update your current finite marriage probabilities to favor those which are yet underrepresented
-        if i > 1 and len(set(all_marriage_distances)) > 2:
-            new_finite_marriage_probs = get_difference_in_probabilities(finite_marriage_probs, all_marriage_distances)
-            new_prob_inf_marriage, new_prob_finite_marriage = get_difference_in_types_of_marriage(prob_inf_marriage, prob_finite_marriage, all_marriage_distances)
-        # elif i > 1 and current_prob_inf > prob_inf_marriage:
-        #     new_finite_marriage_probs = finite_marriage_probs 
-        #     new_prob_inf_marriage, new_prob_finite_marriage = get_difference_in_types_of_marriage(prob_inf_marriage, prob_finite_marriage, all_marriage_distances)
+        if i > 1:
+            new_marriage_probs = get_difference_in_probabilities(marriage_probs, all_marriage_distances, num_people - num_setup_people, name, i, output_path, plot=save, eps=eps)
         else:
-            # if this is the first generation beyond the initial set up OR 
-            # if you don't yet have more than one unique distance in your list 
+            # if this is the first generation beyond the initial set up OR
+            # if you don't yet have more than one unique distance in your list
             # of marriage edges, then just default to the unaltered finite-
-            # distance marriage distribution 
-            new_finite_marriage_probs = finite_marriage_probs
-            new_prob_inf_marriage, new_prob_finite_marriage = prob_inf_marriage, prob_finite_marriage 
-        print('gen. ', i)
-        print('new_prob_inf:', new_prob_inf_marriage)
-        print('new_prob_finite:', new_prob_finite_marriage)
-        unions, num_immigrants, marriage_distances, immigrants, prev_generation_still_single, stay_single_forever = kolton_add_marriage_edges(generation_of_people, prev_generation_still_single, num_people, new_finite_marriage_probs, new_prob_inf_marriage, new_prob_finite_marriage, D, indices)
-        total_num_single += stay_single_forever 
-        # marriage edges should be undirected
-        # ??? TODO should we add both directions in?  We will be able to grab just "Marriage" edges and then undirect this graph equivalently
+            # distance marriage distribution
+            new_marriage_probs = marriage_probs
+
+        new_prob_inf_marriage = new_marriage_probs[-1]
+        new_prob_finite_marriage = sum(new_marriage_probs.values()) - new_marriage_probs[-1] - new_marriage_probs[0]
+        unions, num_immigrants, marriage_distances, immigrants, prev_generation_still_single, stay_single_forever = add_marriage_edges(people=generation_of_people,
+                                                                                                                                              prev_people=prev_generation_still_single,
+                                                                                                                                              num_people=num_people,
+                                                                                                                                              marriage_probs=new_marriage_probs,
+                                                                                                                                              prob_marry_immigrant=new_prob_inf_marriage,
+                                                                                                                                              prob_marry=new_prob_finite_marriage,
+                                                                                                                                              D=D,
+                                                                                                                                              indices=indices,
+                                                                                                                                              original_marriage_dist=marriage_dist,
+                                                                                                                                              eps=eps)
+        total_num_single += stay_single_forever
         G.add_nodes_from(immigrants, layer=i-1)
         G.add_edges_from(unions, Relationship="Marriage")
         all_marriage_edges += list(unions)
@@ -801,12 +876,12 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         num_people += num_immigrants
 
         # add children to each marriage
-        child_edges, families, num_people, num_children_per_couple = add_children_edges_kolton(unions, num_people, child_probs)
+        child_edges, families, num_people, num_children_per_couple = add_children_edges(unions, num_people, child_probs)
 
         # update distances between nodes
-        D, indices = update_distances_kolton(D, num_people, unions, families, indices, prev_generation_still_single)
+        D, indices = update_distances(D, num_people, unions, families, indices, prev_generation_still_single)
 
-        generation_of_people = [key for key in indices.keys() if key not in prev_generation_still_single]  # only grab the new people 
+        generation_of_people = [key for key in indices.keys() if key not in prev_generation_still_single]  # only grab the new people
         G.add_nodes_from(generation_of_people, layer=i)
         G.add_edges_from(child_edges, Relationship='Parent-Child')
         all_children_per_couple += list(num_children_per_couple)
@@ -814,31 +889,43 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         # stats.append(len(generation_of_people))
         stats.append(sum(num_children_per_couple))
         stats.append(len(unions))
-        stat_prob_marry = len(all_marriage_distances) * 2 / len(G) 
-        stat_frac_inf = sum(np.array(all_marriage_distances) == -1) / len(all_marriage_distances)
-        stats.append(stat_prob_marry * stat_frac_inf)  
-        stats.append(stat_prob_marry * (1 - stat_frac_inf)) 
-        
-        # now recalculate marriage stats using only the eligible nodes 
-        # (IE not those preceding gen 0, not prev_gen_still_single, and not 
+        stat_prob_marry = len(all_marriage_distances) * 2 / len(G)
+        if len(all_marriage_distances) > 0:
+            stat_frac_inf = sum(np.array(all_marriage_distances) == -1) / len(all_marriage_distances)
+        else:
+            stat_frac_inf = np.nan
+        stats.append(stat_prob_marry * stat_frac_inf)
+        stats.append(stat_prob_marry * (1 - stat_frac_inf))
+
+        # now recalculate marriage stats using only the eligible nodes
+        # (IE not those preceding gen 0, not prev_gen_still_single, and not
         # leaf nodes---only those nodes that were given the chance to marry)
         stat_prob_marry = len(all_marriage_distances) * 2 / (len(G) - num_setup_people - len(prev_generation_still_single) - sum(num_children_per_couple))
-        current_prob_inf = stat_prob_marry * stat_frac_inf
-        stats.append(stat_prob_marry * stat_frac_inf) 
-        stats.append(stat_prob_marry * (1 - stat_frac_inf)) 
-        
+        stats.append(stat_prob_marry * stat_frac_inf)
+        stats.append(stat_prob_marry * (1 - stat_frac_inf))
+
         summary_statistics.append(stats)
-        
+
         i += 1
 
-        # ??? save output at each generation
+    G_reduced = G.subgraph([node for node, d in G.nodes(data=True) if d['layer'] != 'setup']).copy()
+
     if save:
-        output_path = makeOutputDirectory(out_dir, name)
+
         df = pd.DataFrame(data=summary_statistics, columns=['num_people (excluding initial setup)', 'num_immigrants', 'num_children', 'num_marriages', 'prob_inf_marriage', 'prob_finite_marriage', 'prob_inf_marriage(eligible_only)', 'prob_finite_marriage(eligible_only)'])
         df.index.name='generation'
         df.to_csv(os.path.join(output_path, str(name)+'_summary_statistics.csv'))
-        Gname = Gname = "{}/{}_G.gpickle".format(output_path, name)   # save graph
-        nx.write_gpickle(G, Gname)
+        # Gname = "{}/{}_G_withsetup.gpickle".format(output_path, name)   # save graph
+        #nx.write_gpickle(G, Gname)
+        Gname = "{}/{}_G_withsetup.pkl".format(output_path, name)   # save graph
+        with open(Gname, 'wb') as out:
+            pickle.dump(G, out)
+        # now save a reduced version of the graph, without the setup people
+
+        Gname = "{}/{}_G_no_setup.pkl".format(output_path, name)   # save graph
+        with open(Gname, 'wb') as out:
+            pickle.dump(G_reduced, out)
+
         Uname = "{}/{}_marriage_edges".format(output_path, name) + '.pkl'   # save unions
         with open(Uname, 'wb') as fup:
             pickle.dump(all_marriage_edges, fup)
@@ -853,51 +940,23 @@ def human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_i
         with open('{}/model-{}-oregraph.paj'.format(output_path, name), 'w') as o:
             o.writelines(paj)
 
-        # # save output of the last generation
-        # if i == gen:
-        #     print("Last generation: ", i+1)
-        #     Gname = "{}_G{}.gpickle".format(name, i+1)   # save graph
-        #     nx.write_gpickle(G, Gname)
-        #     Dname = "{}_D{}.npy".format(name, i+1)   # save D
-        #     np.save(Dname, D)
-        #     indicesname = "{}_indices{}.npy".format(name, i)  # save indices
-        #     np.save(indicesname, indices)
-        #     Uname = "{}_U{}".format(name, i+1)   # save unions
-        #     with open(Uname, 'wb') as fup:
-        #         pickle.dump(all_unions, fup)
-        #     Cname = "{}_C{}".format(name, i+1)   # save children
-        #     with open(Cname, 'wb') as fcp:
-        #         pickle.dump(all_children, fcp)
-
-        return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, output_path
+        return G, G_reduced, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, output_path
 
     else:
-        return G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out
+        return G, G_reduced, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, None
 
 #%%
 """
 below is example code to run the model
 """
-# #
-# name = 'obidos'
-# num_people = 5
-# name = 'arara'
-# num_people = 7
-# # name = 'san_marino'
-# # num_people = 100
-# name = 'trio_1960s'
-# num_people = 3
-
+# name = 'kelkummer'
+# num_people = 432
 # marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-
-
-# children_dist = child_dist
-# when_to_stop = size_goal 
-# num_gens = np.inf
-# G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, output_path = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, save=True, when_to_stop=size_goal)
+# eps=0
+# G, G_reduced, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, output_path = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, save=True, when_to_stop=size_goal, eps=eps)
 
 #%%
-def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True): # n = number of initial nodes
+def find_start_size(name, out_directory='start_size', filename='start_size', max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, random_start=True, return_counter=False): # n = number of initial nodes
     counter = 0
 
     filename = name + '_' + filename
@@ -916,7 +975,7 @@ def find_start_size(name, out_directory='start_size', filename='start_size', max
 
         for i in range(max_iters):
             counter += 1
-            G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies = human_family_network(num_people,
+            G, G_reduced, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies, output_path = human_family_network(num_people,
                                                                                                                 marriage_dist,
                                                                                                                 prob_finite_marriage,
                                                                                                                 prob_inf_marriage,
@@ -964,94 +1023,14 @@ def find_start_size(name, out_directory='start_size', filename='start_size', max
         with open(os.path.join(out_directory, filename + '.pkl'), 'wb') as outfile:
             pickle.dump(start_sizes, outfile)
 
-    return start_sizes, counter
-#%%
-
-def find_start_size2(name,
-                     out_directory='start_size',
-                     filename='start_size',
-                     max_iters=100,
-                     dies_out_threshold=5,
-                     verbose=False,
-                     save_start_sizes=True,
-                     random_start=True,
-                     load_data=False,
-                     marriage_dist=None,
-                     num_marriages=None,
-                     prob_inf_marriage=None,
-                     prob_finite_marriage=None,
-                     child_dist=None,
-                     size_goal=None):
-    filename = name + '_' + filename
-    if load_data:
-        marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
-
-    greatest_lower_bound = 2
-    least_upper_bound = size_goal
-
-    if random_start:
-        num_people = np.random.randint(greatest_lower_bound, size_goal)
+    if return_counter:
+        return start_sizes, counter
     else:
-        num_people = size_goal//2
-    dies_out = 0 # counter for the number of times the model dies out
-
-    start_sizes = [num_people]
-
-    max_iters = max_iters - dies_out_threshold
-    while dies_out != dies_out_threshold: # while the number of times the model dies out is not equal to the threshold of dying:
-
-        for i in range(max_iters):
-            G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies = human_family_network(num_people,
-                                                                                                                marriage_dist,
-                                                                                                                prob_finite_marriage,
-                                                                                                                prob_inf_marriage,
-                                                                                                                child_dist,
-                                                                                                                name,
-                                                                                                                when_to_stop=size_goal,
-                                                                                                                save=False)
-            if dies:
-                dies_out += 1
-            if dies_out > dies_out_threshold:
-                break
+        return start_sizes
 
 
-        if greatest_lower_bound >= least_upper_bound - 1:
-            # IE the ideal lies between these two integers
-            # so return the larger
-            num_people = least_upper_bound
-            break
-        elif dies_out == dies_out_threshold:
-            break
-        elif dies_out > dies_out_threshold:  # we want to increase num_people
-            greatest_lower_bound = num_people  # current iteration died out too frequently.  Won't need to search below this point again.
-            num_people = (num_people + least_upper_bound) // 2 # midpoint between num_people and size_goal
-            dies_out = 0
-
-        elif dies_out < dies_out_threshold: # we want to decrease num_people
-            least_upper_bound = num_people  # current iteration died out too infrequently.  Won't need to search above this point again
-            num_people = (greatest_lower_bound + num_people) // 2 # midpoint between 2 and num_people
-            dies_out = 0
-
-        if verbose:
-            print('greatest_lower_bound: ', greatest_lower_bound)
-            print('least_upper_bound: ', least_upper_bound)
-            print('starting population: ', num_people)
-        start_sizes.append(num_people)
-
-
-    if save_start_sizes:
-        if not os.path.exists(out_directory):
-            os.makedirs(out_directory)
-        filename = find_file_version_number(out_directory, filename, extension='.txt')
-        # save a text file (one integer per line)
-        with open(os.path.join(out_directory, filename +'.txt'), 'w') as outfile:
-            outfile.writelines([str(k) + '\n' for k in start_sizes])
-        # save the actual object
-        with open(os.path.join(out_directory, filename + '.pkl'), 'wb') as outfile:
-            pickle.dump(start_sizes, outfile)
-
-    return start_sizes
 #%%
+
 
 def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_iters=100, dies_out_threshold=5,  verbose=False, save_start_sizes=True, save_individual_start_sizes=False, random_start=True, show_plot=False):
     #find out directory.  Every iteration in this function call will output to the same file
@@ -1083,11 +1062,11 @@ def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_it
                 outfile.write(str(start_sizes))
                 outfile.write('\n')
 
-    if save_start_sizes:
-        # save the unaltered (entries will be of differing lengths) set of start sizes
-        # as a pickle object for later use
-        with open(os.path.join(out_dir, filename + '.pkl'), 'wb') as outfile:
-            pickle.dump(to_plot, outfile)
+        if save_start_sizes:
+            # save the unaltered (entries will be of differing lengths) set of start sizes
+            # as a pickle object for later use
+            with open(os.path.join(out_dir, filename + '.pkl'), 'wb') as outfile:
+                pickle.dump(to_plot, outfile)
 
     # prep each entry of to_plot.  Not every iteration will have the same num
     # of entries.  Just repeat the last entry as necessary
@@ -1118,8 +1097,17 @@ def repeatedly_call_start_size(name, out_directory='start_size', iters=5, max_it
         plt.show()
 
     return avg_run
-#%%
-
-# temp = find_start_size(name, max_iters=5, dies_out_threshold=1)
 
 #%%
+
+# if __name__=='__main__':
+#     name = 'arara'
+#     num_people = 43
+#     marriage_dist, num_marriages, prob_inf_marriage, prob_finite_marriage, child_dist, size_goal = get_graph_stats(name)
+
+#     # children_dist = child_dist
+#     # when_to_stop = size_goal
+#     # num_gens = np.inf
+#     # out_dir = 'output'
+#     # save = True
+#     G, all_marriage_edges, all_marriage_distances, all_children_per_couple, dies_out, output_path = human_family_network(num_people, marriage_dist, prob_finite_marriage, prob_inf_marriage, child_dist, name, save=True, when_to_stop=size_goal)
